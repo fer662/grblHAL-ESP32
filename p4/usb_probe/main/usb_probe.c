@@ -19,7 +19,7 @@
 #define X_ENABLE GPIO_NUM_47
 #define Z_ENABLE GPIO_NUM_30
 
-static esp_ldo_channel_handle_t io_ldo4, io_ldo5;
+static esp_ldo_channel_handle_t io_ldo4;
 
 static void disable_motion_outputs(void)
 {
@@ -33,9 +33,9 @@ static void disable_motion_outputs(void)
     };
     ESP_ERROR_CHECK(gpio_config(&enable));
     esp_ldo_channel_config_t ldo4 = {.chan_id = 4, .voltage_mv = 3300};
-    esp_ldo_channel_config_t ldo5 = {.chan_id = 5, .voltage_mv = 3300};
     ESP_ERROR_CHECK(esp_ldo_acquire_channel(&ldo4, &io_ldo4));
-    ESP_ERROR_CHECK(esp_ldo_acquire_channel(&ldo5, &io_ldo5));
+    // P4 exposes LDO IDs 1..4. Legacy H5 also requested invalid ID 5,
+    // but checked the previous call's result and missed that failure.
     // STEP and DIR pins deliberately remain inputs. No pulse source exists.
 }
 
@@ -56,7 +56,17 @@ static void report_info(void)
 void app_main(void)
 {
     disable_motion_outputs();
+    const uart_config_t console = {
+        .baud_rate = 115200,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_DEFAULT,
+    };
+    ESP_ERROR_CHECK(uart_param_config(UART_NUM_0, &console));
     ESP_ERROR_CHECK(uart_driver_install(UART_NUM_0, 1024, 0, 0, NULL, 0));
+    ESP_ERROR_CHECK(uart_flush_input(UART_NUM_0));
     report_info();
     printf("Commands: PING, INFO. Motor power must remain off during this probe.\n");
     char command[32];
@@ -73,8 +83,12 @@ void app_main(void)
                         puts("PONG H5_P4_USB_PROBE");
                     else if (!overflow && strcmp(command, "INFO") == 0)
                         report_info();
-                    else
-                        puts("ERROR supported_commands=PING,INFO");
+                    else {
+                        printf("ERROR supported_commands=PING,INFO overflow=%d received_hex=", overflow);
+                        for (size_t i = 0; i < used; i++)
+                            printf("%02x", (unsigned char)command[i]);
+                        putchar('\n');
+                    }
                     fflush(stdout);
                     used = 0;
                     overflow = false;
