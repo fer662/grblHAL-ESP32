@@ -1,492 +1,132 @@
 #include "DPad.h"
 #include "App_Style.h"
-#include "lvgl.h"
+#include "lv_conf.h"
 #include "main.h"
-#include "ui_support.h"
-#include <array>
 
-constexpr int baseLength(int height) { return 2 * height; }
-
-static const int arrowLength = 66;
-static const int arrowWidth = baseLength(arrowLength);
-static const int triangleHeight = 66;
-static const int offsetFromCenter = 3;
-static const int endstopThickness = 40;
-static const int endstopToArrowMargin = 0;
-static const int trapeziumInnerLength =
-    baseLength(triangleHeight + endstopToArrowMargin);
-static const int trapeziumOuterLength =
-    baseLength(triangleHeight + endstopToArrowMargin + endstopThickness);
-
-const int containerSize = arrowLength * 2 + offsetFromCenter * 2 +
-                          endstopThickness * 2 + endstopToArrowMargin * 2;
 DPad::DPad(lv_obj_t *parent, ButtonDownCallback downCb, ButtonUpCallback upCb,
            ButtonUpCallback endstopUpCb, void *userData)
     : buttonDownCallback(downCb), buttonUpCallback(upCb),
       endstopButtonUpCallback(endstopUpCb), userData(userData) {
-
-  // Initialize cached values
   lastEndstopTexts.fill("");
   container = lv_obj_create(parent);
-
-  lv_obj_set_size(container, containerSize, containerSize);
-  lv_obj_center(container);
-
-  lv_obj_set_style_bg_opa(container, LV_OPA_COVER, 0);
-  lv_obj_set_style_bg_color(container, lv_color_hex(0xCCCCCC), 0);
+  lv_obj_set_size(container, 600, 580);
+  lv_obj_set_style_bg_color(container, APP_COLOR_BG_SECONDARY, 0);
   lv_obj_set_style_border_width(container, 0, 0);
   lv_obj_set_style_pad_all(container, 0, 0);
-  lv_obj_clear_flag(container,
-                    LV_OBJ_FLAG_SCROLL_CHAIN | LV_OBJ_FLAG_SCROLLABLE |
-                        LV_OBJ_FLAG_SCROLL_MOMENTUM | LV_OBJ_FLAG_SCROLL_ONE);
+  lv_obj_set_style_radius(container, 16, 0);
+  lv_obj_clear_flag(container, LV_OBJ_FLAG_SCROLLABLE);
 
-  // Create 4 directional buttons
-  for (int i = 0; i < 4; i++) {
+  auto title = lv_label_create(container);
+  lv_label_set_text(title, "JOG");
+  lv_obj_set_style_text_font(title, LV_FONT_BIG, 0);
+  lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 16);
+
+  // Keep H5's physical direction mapping: left is Z+, right is Z-.
+  const char *labels[] = {LV_SYMBOL_UP "  X+", "Z-  " LV_SYMBOL_RIGHT,
+                         LV_SYMBOL_DOWN "  X-", LV_SYMBOL_LEFT "  Z+"};
+  const lv_point_t positions[] = {{220, 62}, {412, 190}, {220, 318}, {28, 190}};
+  for (unsigned i = 0; i < 4; ++i) {
     buttons[i] = lv_btn_create(container);
-
-    lv_obj_add_flag(buttons[i], LV_OBJ_FLAG_IGNORE_LAYOUT);
-    lv_obj_add_flag(buttons[i], LV_OBJ_FLAG_ADV_HITTEST);
-    lv_obj_set_style_radius(buttons[i], 0, 0);
-    lv_obj_set_style_bg_opa(buttons[i], LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(buttons[i], 0, 0);
-    lv_obj_set_style_text_color(buttons[i], lv_color_hex(0x000000), 0);
+    lv_obj_set_size(buttons[i], 160, 112);
+    lv_obj_set_pos(buttons[i], positions[i].x, positions[i].y);
+    lv_obj_set_style_radius(buttons[i], 12, 0);
+    lv_obj_set_style_bg_color(buttons[i], APP_COLOR_WARNING, 0);
+    lv_obj_set_style_bg_color(buttons[i], COLOR_PRESSED(APP_COLOR_WARNING), LV_STATE_PRESSED);
+    lv_obj_set_style_bg_color(buttons[i], APP_COLOR_BG_TERTIARY, LV_STATE_DISABLED);
+    lv_obj_set_style_text_color(buttons[i], lv_color_black(), 0);
+    lv_obj_set_style_text_color(buttons[i], APP_COLOR_TEXT_DISABLED, LV_STATE_DISABLED);
     lv_obj_set_style_shadow_width(buttons[i], 0, 0);
-    lv_obj_set_style_outline_width(buttons[i], 0, 0);
-    lv_obj_set_style_outline_opa(buttons[i], LV_OPA_TRANSP, 0);
-    lv_obj_set_style_shadow_opa(buttons[i], LV_OPA_TRANSP, 0);
-
-    // Add event callbacks for press and release
+    lv_obj_set_style_text_font(buttons[i], &lv_font_montserrat_28, 0);
+    lv_obj_clear_flag(buttons[i], LV_OBJ_FLAG_PRESS_LOCK | LV_OBJ_FLAG_SCROLLABLE);
+    auto label = lv_label_create(buttons[i]);
+    lv_label_set_text(label, labels[i]);
+    lv_obj_center(label);
     lv_obj_add_event_cb(buttons[i], press_event_cb, LV_EVENT_PRESSED, this);
     lv_obj_add_event_cb(buttons[i], press_event_cb, LV_EVENT_RELEASED, this);
     lv_obj_add_event_cb(buttons[i], press_event_cb, LV_EVENT_PRESS_LOST, this);
-    lv_obj_add_event_cb(buttons[i], hit_test_cb, LV_EVENT_HIT_TEST,
-                        (void *)(intptr_t)i);
-    lv_obj_add_event_cb(buttons[i], draw_event_cb, LV_EVENT_DRAW_MAIN,
-                        (void *)(intptr_t)i);
-
-    // Position buttons
-    switch (i) {
-    case BTN_UP:
-      lv_obj_set_size(buttons[i], arrowWidth, arrowLength);
-      lv_obj_align(buttons[i], LV_ALIGN_TOP_MID, 0,
-                   endstopThickness + endstopToArrowMargin);
-      break;
-    case BTN_RIGHT:
-      lv_obj_set_size(buttons[i], arrowLength, arrowWidth);
-      lv_obj_align(buttons[i], LV_ALIGN_RIGHT_MID,
-                   -endstopThickness - endstopToArrowMargin, 0);
-      break;
-    case BTN_DOWN:
-      lv_obj_set_size(buttons[i], arrowWidth, arrowLength);
-      lv_obj_align(buttons[i], LV_ALIGN_BOTTOM_MID, 0,
-                   -endstopThickness - endstopToArrowMargin);
-      break;
-    case BTN_LEFT:
-      lv_obj_set_size(buttons[i], arrowLength, arrowWidth);
-      lv_obj_align(buttons[i], LV_ALIGN_LEFT_MID,
-                   endstopThickness + endstopToArrowMargin, 0);
-      break;
-    }
   }
 
-  // Create 4 endstop buttons (trapeziums)
-  for (int i = 0; i < 4; i++) {
+  // Setting a machining limit is a separate target from jogging.
+  const Direction order[] = {BTN_UP, BTN_DOWN, BTN_LEFT, BTN_RIGHT};
+  for (unsigned column = 0; column < 4; ++column) {
+    unsigned i = order[column];
     endstopButtons[i] = lv_btn_create(container);
-
-    lv_obj_add_flag(endstopButtons[i], LV_OBJ_FLAG_IGNORE_LAYOUT);
-    lv_obj_add_flag(endstopButtons[i], LV_OBJ_FLAG_ADV_HITTEST);
-    lv_obj_set_style_radius(endstopButtons[i], 0, 0);
-    lv_obj_set_style_bg_opa(endstopButtons[i], LV_OPA_TRANSP, 0);
-    lv_obj_set_style_text_color(endstopButtons[i], lv_color_hex(0xFFFFFF), 0);
-    lv_obj_set_style_shadow_width(endstopButtons[i], 0, 0);
-    lv_obj_set_style_outline_width(endstopButtons[i], 0, 0);
-    lv_obj_set_style_outline_opa(endstopButtons[i], LV_OPA_TRANSP, 0);
-    lv_obj_set_style_shadow_opa(endstopButtons[i], LV_OPA_TRANSP, 0);
-
-    // Add event callbacks for press and release
-    lv_obj_add_event_cb(endstopButtons[i], endstop_press_event_cb,
-                        LV_EVENT_PRESSED, this);
-    lv_obj_add_event_cb(endstopButtons[i], endstop_press_event_cb,
-                        LV_EVENT_RELEASED, this);
-    lv_obj_add_event_cb(endstopButtons[i], endstop_hit_test_cb,
-                        LV_EVENT_HIT_TEST, (void *)(intptr_t)i);
-    lv_obj_add_event_cb(endstopButtons[i], endstop_draw_event_cb,
-                        LV_EVENT_DRAW_MAIN, (void *)(intptr_t)i);
-
-    switch (i) {
-    case BTN_UP:
-      lv_obj_set_size(endstopButtons[i], containerSize, endstopThickness);
-      lv_obj_align(endstopButtons[i], LV_ALIGN_TOP_MID, 0, 0);
-      break;
-    case BTN_RIGHT:
-      lv_obj_set_size(endstopButtons[i], endstopThickness, containerSize);
-      lv_obj_align(endstopButtons[i], LV_ALIGN_RIGHT_MID, 0, 0);
-      break;
-    case BTN_DOWN:
-      lv_obj_set_size(endstopButtons[i], containerSize, endstopThickness);
-      lv_obj_align(endstopButtons[i], LV_ALIGN_BOTTOM_MID, 0, 0);
-      break;
-    case BTN_LEFT:
-      lv_obj_set_size(endstopButtons[i], endstopThickness, containerSize);
-      lv_obj_align(endstopButtons[i], LV_ALIGN_LEFT_MID, 0, 0);
-      break;
-    }
-
-    // Create labels in the container (not inside endstop buttons)
-    endstopLabels[i] = lv_label_create(container);
-    lv_label_set_text(endstopLabels[i], "-10.12");
-    lv_obj_set_style_text_color(endstopLabels[i], lv_color_hex(0xFFFFFF), 0);
-
-    // Position labels in the joint space between endstop and arrow buttons
-    switch (i) {
-    case BTN_UP:
-      // Position above the arrow button, below the endstop
-      lv_obj_align(endstopLabels[i], LV_ALIGN_TOP_MID, 0,
-                   5); // 5px margin from endstop
-      break;
-    case BTN_RIGHT:
-      // Position to the right of the arrow button, left of the endstop
-      lv_obj_align(endstopLabels[i], LV_ALIGN_RIGHT_MID, -5,
-                   0); // 5px margin from endstop
-      break;
-    case BTN_DOWN:
-      // Position below the arrow button, above the endstop
-      lv_obj_align(endstopLabels[i], LV_ALIGN_BOTTOM_MID, 0,
-                   -5); // 5px margin from endstop
-      break;
-    case BTN_LEFT:
-      // Position to the left of the arrow button, right of the endstop
-      lv_obj_align(endstopLabels[i], LV_ALIGN_LEFT_MID, 5,
-                   0); // 5px margin from endstop
-      break;
-    }
+    lv_obj_set_size(endstopButtons[i], 132, 72);
+    lv_obj_set_pos(endstopButtons[i], 12 + column * 148, 458);
+    lv_obj_set_style_radius(endstopButtons[i], 8, 0);
+    lv_obj_set_style_bg_color(endstopButtons[i], APP_COLOR_BG_TERTIARY, 0);
+    lv_obj_set_style_bg_color(endstopButtons[i], APP_COLOR_SECONDARY, LV_STATE_PRESSED);
+    lv_obj_set_style_text_font(endstopButtons[i], &lv_font_montserrat_18, 0);
+    lv_obj_set_style_pad_all(endstopButtons[i], 4, 0);
+    endstopLabels[i] = lv_label_create(endstopButtons[i]);
+    lv_obj_set_style_text_align(endstopLabels[i], LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_center(endstopLabels[i]);
+    lv_obj_add_event_cb(endstopButtons[i], endstop_press_event_cb, LV_EVENT_CLICKED, this);
   }
+  auto hint = lv_label_create(container);
+  lv_label_set_text(hint, "Limits: tap to set / clear  |  SHIFT: enter value");
+  lv_obj_set_style_text_font(hint, &lv_font_montserrat_16, 0);
+  lv_obj_set_style_text_color(hint, APP_COLOR_TEXT_SECONDARY, 0);
+  lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -14);
+  update();
 }
 
 void DPad::update() {
-  // Check and update each endstop label only if text has changed
-  auto currentLeftZ = getAxisLeftStop(&z);
-  if (currentLeftZ != lastEndstopTexts[BTN_LEFT]) {
-    lv_label_set_text(endstopLabels[BTN_LEFT], currentLeftZ.c_str());
-    lastEndstopTexts[BTN_LEFT] = currentLeftZ;
-  }
-
-  auto currentRightZ = getAxisRightStop(&z);
-  if (currentRightZ != lastEndstopTexts[BTN_RIGHT]) {
-    lv_label_set_text(endstopLabels[BTN_RIGHT], currentRightZ.c_str());
-    lastEndstopTexts[BTN_RIGHT] = currentRightZ;
-  }
-
-  auto currentLeftX = getAxisLeftStop(&x);
-  if (currentLeftX != lastEndstopTexts[BTN_UP]) {
-    lv_label_set_text(endstopLabels[BTN_UP], currentLeftX.c_str());
-    lastEndstopTexts[BTN_UP] = currentLeftX;
-  }
-
-  auto currentRightX = getAxisRightStop(&x);
-  if (currentRightX != lastEndstopTexts[BTN_DOWN]) {
-    lv_label_set_text(endstopLabels[BTN_DOWN], currentRightX.c_str());
-    lastEndstopTexts[BTN_DOWN] = currentRightX;
+  const String values[] = {getAxisLeftStop(&x), getAxisRightStop(&z),
+                           getAxisRightStop(&x), getAxisLeftStop(&z)};
+  const char *names[] = {"X+ limit", "Z- limit", "X- limit", "Z+ limit"};
+  for (unsigned i = 0; i < 4; ++i) {
+    if (values[i] != lastEndstopTexts[i]) {
+      String text = String(names[i]) + "\n" + values[i];
+      lv_label_set_text(endstopLabels[i], text.c_str());
+      lastEndstopTexts[i] = values[i];
+      bool set = values[i] != "-";
+      lv_obj_set_style_border_width(endstopButtons[i], set ? 2 : 0, 0);
+      lv_obj_set_style_border_color(endstopButtons[i], APP_COLOR_WARNING, 0);
+    }
+    bool disabled = (i == BTN_UP || i == BTN_DOWN) ? x.disabled : z.disabled;
+    if (disabled) lv_obj_add_state(buttons[i], LV_STATE_DISABLED);
+    else lv_obj_clear_state(buttons[i], LV_STATE_DISABLED);
   }
 }
 
 void DPad::setButtonColor(lv_color_t color) {
-  for (auto button : buttons) {
-    lv_obj_set_style_bg_color(button, color, 0);
-  }
+  for (auto button : buttons) lv_obj_set_style_bg_color(button, color, 0);
 }
-
-void DPad::setButtonDownCallback(ButtonDownCallback cb, void *userData) {
-  buttonDownCallback = cb;
-  this->userData = userData;
+void DPad::setButtonDownCallback(ButtonDownCallback cb, void *data) {
+  buttonDownCallback = cb; userData = data;
 }
-
-void DPad::setButtonUpCallback(ButtonUpCallback cb, void *userData) {
-  buttonUpCallback = cb;
-  this->userData = userData;
+void DPad::setButtonUpCallback(ButtonUpCallback cb, void *data) {
+  buttonUpCallback = cb; userData = data;
 }
-
-void DPad::setEndstopButtonUpCallback(ButtonUpCallback cb, void *userData) {
-  endstopButtonUpCallback = cb;
-  this->userData = userData;
+void DPad::setEndstopButtonUpCallback(ButtonUpCallback cb, void *data) {
+  endstopButtonUpCallback = cb; userData = data;
 }
-
 void DPad::press_event_cb(lv_event_t *e) {
-  DPad *self = (DPad *)lv_event_get_user_data(e);
-  lv_obj_t *btn = lv_event_get_target(e);
-  uint32_t event_code = lv_event_get_code(e);
-
-  for (int i = 0; i < 4; i++) {
-    if (btn == self->buttons[i]) {
-      if (event_code == LV_EVENT_PRESSED && self->buttonDownCallback) {
-        self->buttonDownCallback((Direction)i, self->userData);
-      } else if ((event_code == LV_EVENT_RELEASED || event_code == LV_EVENT_PRESS_LOST) && self->buttonUpCallback) {
-        self->buttonUpCallback((Direction)i, self->userData);
-      }
-      break;
+  auto self = static_cast<DPad *>(lv_event_get_user_data(e));
+  auto target = lv_event_get_target(e);
+  auto code = lv_event_get_code(e);
+  for (unsigned i = 0; i < 4; ++i) {
+    if (target != self->buttons[i]) continue;
+    if (code == LV_EVENT_PRESSED && self->buttonDownCallback)
+      self->buttonDownCallback(static_cast<Direction>(i), self->userData);
+    else if ((code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) && self->buttonUpCallback)
+      self->buttonUpCallback(static_cast<Direction>(i), self->userData);
+    // Sliding out cancels this jog. A different direction requires lifting the
+    // finger first, rather than starting another move in the same gesture.
+    if (code == LV_EVENT_PRESS_LOST && lv_indev_get_act()) {
+      // LVGL 8 can dispatch PRESSED to the new target in this same input tick.
+      // Reset aborts that dispatch; wait_release blocks subsequent held ticks.
+      auto input = lv_indev_get_act();
+      lv_indev_reset(input, nullptr);
+      lv_indev_wait_release(input);
     }
+    break;
   }
 }
-
-void DPad::polygonPoints(Direction dir, lv_area_t coords,
-                         lv_point_t points[3]) {
-  switch (dir) {
-  case BTN_UP: {
-    lv_coord_t center_x = (coords.x1 + coords.x2) / 2;
-    lv_coord_t center_y = coords.y2;
-
-    // CCW: tip → bottom-left → bottom-right
-    points[0] = {center_x, center_y}; // tip
-    points[1] = {(lv_coord_t)(center_x - arrowWidth / 2),
-                 (lv_coord_t)(center_y - triangleHeight)}; // bottom-left
-    points[2] = {(lv_coord_t)(center_x + arrowWidth / 2),
-                 (lv_coord_t)(center_y - triangleHeight)}; // bottom-right
-    break;
-  }
-  case BTN_DOWN: {
-    lv_coord_t center_x = (coords.x1 + coords.x2) / 2;
-    lv_coord_t center_y = coords.y1;
-
-    // CCW: tip → top-left → top-right
-    points[0] = {center_x, center_y}; // tip
-    points[1] = {(lv_coord_t)(center_x - arrowWidth / 2),
-                 (lv_coord_t)(center_y + triangleHeight)}; // top-left
-    points[2] = {(lv_coord_t)(center_x + arrowWidth / 2),
-                 (lv_coord_t)(center_y + triangleHeight)}; // top-right
-    break;
-  }
-  case BTN_LEFT: {
-    lv_coord_t center_x = coords.x2;
-    lv_coord_t center_y = (coords.y1 + coords.y2) / 2;
-
-    // CCW: tip → bottom-right → top-right
-    points[0] = {center_x, center_y}; // tip
-    points[1] = {(lv_coord_t)(center_x - triangleHeight),
-                 (lv_coord_t)(center_y + arrowWidth / 2)}; // bottom-right
-    points[2] = {(lv_coord_t)(center_x - triangleHeight),
-                 (lv_coord_t)(center_y - arrowWidth / 2)}; // top-right
-    break;
-  }
-  case BTN_RIGHT: {
-    lv_coord_t center_x = coords.x1;
-    lv_coord_t center_y = (coords.y1 + coords.y2) / 2;
-
-    // CCW: tip → top-left → bottom-left
-    points[0] = {center_x, center_y}; // tip
-    points[1] = {(lv_coord_t)(center_x + triangleHeight),
-                 (lv_coord_t)(center_y - arrowWidth / 2)}; // top-left
-    points[2] = {(lv_coord_t)(center_x + triangleHeight),
-                 (lv_coord_t)(center_y + arrowWidth / 2)}; // bottom-left
-    break;
-  }
-  }
-}
-
-void DPad::draw_event_cb(lv_event_t *e) {
-  Direction dir = (Direction)(intptr_t)lv_event_get_user_data(e);
-  lv_obj_t *obj = lv_event_get_target(e);
-
-  lv_draw_ctx_t *draw_ctx = lv_event_get_draw_ctx(e);
-  lv_area_t coords;
-  lv_obj_get_coords(obj, &coords);
-
-  lv_coord_t width = lv_area_get_width(&coords);
-  lv_coord_t height = lv_area_get_height(&coords);
-
-  lv_coord_t square_part_length = arrowLength - triangleHeight;
-
-  // Define 3 points for the triangle
-  lv_point_t points[3];
-
-  polygonPoints(dir, coords, points);
-  // Draw polygon edges with lv_canvas_draw_line (safe way)
-  lv_draw_rect_dsc_t rect_dsc;
-  lv_draw_rect_dsc_init(&rect_dsc);
-  rect_dsc.bg_color = lv_obj_has_state(obj, LV_STATE_PRESSED)
-                          ? COLOR_PRESSED(APP_COLOR_WARNING)
-                          : APP_COLOR_WARNING;
-  rect_dsc.radius = 0;
-  lv_draw_polygon(draw_ctx, &rect_dsc, points, 3);
-}
-
-void DPad::hit_test_cb(lv_event_t *e) {
-  lv_hit_test_info_t *info = (lv_hit_test_info_t *)lv_event_get_param(e);
-  lv_obj_t *obj = lv_event_get_target(e);
-
-  lv_area_t coords;
-  lv_obj_get_coords(obj, &coords);
-
-  Direction dir = (Direction)(intptr_t)lv_event_get_user_data(e);
-
-  lv_point_t points[3];
-  polygonPoints(dir, coords, points);
-
-  // --- Point-in-triangle test using barycentric coordinates ---
-  lv_coord_t test_x = info->point->x;
-  lv_coord_t test_y = info->point->y;
-
-  // Get triangle vertices (assuming points[0] is the tip, points[1] and
-  // points[2] are base)
-  lv_coord_t x1 = points[0].x, y1 = points[0].y; // tip
-  lv_coord_t x2 = points[1].x, y2 = points[1].y; // base vertex 1
-  lv_coord_t x3 = points[2].x, y3 = points[2].y; // base vertex 2
-
-  // Calculate barycentric coordinates
-  int32_t denominator = ((y2 - y3) * (x1 - x3) + (x3 - x2) * (y1 - y3));
-
-  // Avoid division by zero
-  if (denominator == 0) {
-    info->res = false;
-    return;
-  }
-
-  int32_t w1 = ((y2 - y3) * (test_x - x3) + (x3 - x2) * (test_y - y3));
-  int32_t w2 = ((y3 - y1) * (test_x - x3) + (x1 - x3) * (test_y - y3));
-
-  // Convert to barycentric coordinates
-  int32_t b1 = w1 * 1000 / denominator; // Scale by 1000 to avoid floating point
-  int32_t b2 = w2 * 1000 / denominator;
-  int32_t b3 = 1000 - b1 - b2;
-
-  // Point is inside if all barycentric coordinates are >= 0
-  bool inside = (b1 >= 0) && (b2 >= 0) && (b3 >= 0);
-  info->res = inside; // always set
-}
-
-void DPad::endstopPolygonPoints(Direction dir, lv_area_t coords,
-                                lv_point_t points[4]) {
-  lv_coord_t square_part_length = arrowLength - triangleHeight;
-  static int16_t gap = (containerSize - trapeziumOuterLength) / 2;
-  switch (dir) {
-  case BTN_UP: {
-    lv_coord_t center_x = (coords.x1 + coords.x2) / 2;
-
-    // CCW bottom-left → bottom-right → top-right → top-left
-    points[0] = {(lv_coord_t)(center_x - trapeziumInnerLength / 2),
-                 coords.y2}; // bottom-left
-    points[1] = {(lv_coord_t)(center_x + trapeziumInnerLength / 2),
-                 coords.y2};                                // bottom-right
-    points[2] = {(lv_coord_t)(coords.x2 - gap), coords.y1}; // top-right
-    points[3] = {(lv_coord_t)(coords.x1 + gap), coords.y1}; // top-left
-    break;
-  }
-  case BTN_DOWN: {
-    lv_coord_t center_x = (coords.x1 + coords.x2) / 2;
-
-    // CCW top-left → top-right → bottom-right → bottom-left
-    points[0] = {(lv_coord_t)(center_x - trapeziumInnerLength / 2),
-                 coords.y1}; // top-left
-    points[1] = {(lv_coord_t)(center_x + trapeziumInnerLength / 2),
-                 coords.y1};                                // top-right
-    points[2] = {(lv_coord_t)(coords.x2 - gap), coords.y2}; // bottom-right
-    points[3] = {(lv_coord_t)(coords.x1 + gap), coords.y2}; // bottom-left
-    break;
-  }
-  case BTN_LEFT: {
-    lv_coord_t center_y = (coords.y1 + coords.y2) / 2;
-    lv_coord_t triangle_base_x = coords.x1 + endstopThickness;
-
-    // CCW top-left → bottom-left → bottom-right → top-right
-    points[0] = {coords.x1, (lv_coord_t)(coords.y1 + gap)}; // top-left
-    points[1] = {coords.x1, (lv_coord_t)(coords.y2 - gap)}; // bottom-left
-    points[2] = {
-        triangle_base_x,
-        (lv_coord_t)(center_y + trapeziumInnerLength / 2)}; // bottom-right
-    points[3] = {triangle_base_x, (lv_coord_t)(center_y - trapeziumInnerLength /
-                                                              2)}; // top-right
-    break;
-  }
-  case BTN_RIGHT: {
-    lv_coord_t center_y = (coords.y1 + coords.y2) / 2;
-    lv_coord_t triangle_base_x = coords.x2 - endstopThickness;
-
-    // CCW top-left → top-right → bottom-right → bottom-left
-    points[0] = {triangle_base_x,
-                 (lv_coord_t)(center_y - trapeziumInnerLength / 2)}; // top-left
-    points[1] = {coords.x2, (lv_coord_t)(coords.y1 + gap)}; // top-right
-    points[2] = {coords.x2, (lv_coord_t)(coords.y2 - gap)}; // bottom-right
-    points[3] = {
-        triangle_base_x,
-        (lv_coord_t)(center_y + trapeziumInnerLength / 2)}; // bottom-left
-    break;
-  }
-  }
-}
-
-void DPad::endstop_draw_event_cb(lv_event_t *e) {
-  Direction dir = (Direction)(intptr_t)lv_event_get_user_data(e);
-  lv_obj_t *obj = lv_event_get_target(e);
-
-  lv_draw_ctx_t *draw_ctx = lv_event_get_draw_ctx(e);
-  lv_area_t coords;
-  lv_obj_get_coords(obj, &coords);
-
-  // Define 4 points for the trapezium shape
-  lv_point_t points[4];
-  endstopPolygonPoints(dir, coords, points);
-
-  // Draw polygon with red color
-  lv_draw_rect_dsc_t rect_dsc;
-  lv_draw_rect_dsc_init(&rect_dsc);
-  rect_dsc.bg_color = lv_obj_has_state(obj, LV_STATE_PRESSED)
-                          ? lv_color_darken(lv_color_hex(0xFF0000), 20)
-                          : lv_color_hex(0xFF0000);
-  rect_dsc.radius = 0;
-  lv_draw_polygon(draw_ctx, &rect_dsc, points, 4);
-}
-
-void DPad::endstop_hit_test_cb(lv_event_t *e) {
-
-  lv_hit_test_info_t *info = (lv_hit_test_info_t *)lv_event_get_param(e);
-  lv_obj_t *obj = lv_event_get_target(e);
-
-  lv_area_t coords;
-  lv_obj_get_coords(obj, &coords);
-
-  Direction dir = (Direction)(intptr_t)lv_event_get_user_data(e);
-
-  lv_point_t points[4];
-  endstopPolygonPoints(dir, coords, points);
-
-  // Ray-casting point-in-polygon test
-  bool inside = false;
-  lv_coord_t test_x = info->point->x;
-  lv_coord_t test_y = info->point->y;
-
-  int nvert = 4;
-  for (int i = 0, j = nvert - 1; i < nvert; j = i++) {
-    lv_coord_t xi = points[i].x;
-    lv_coord_t yi = points[i].y;
-    lv_coord_t xj = points[j].x;
-    lv_coord_t yj = points[j].y;
-
-    // Skip horizontal edges to avoid division by zero
-    if (yj != yi) {
-      bool intersect =
-          ((yi > test_y) != (yj > test_y)) &&
-          (test_x < (lv_coord_t)(xi + (int32_t)(xj - xi) * (test_y - yi) /
-                                          (int32_t)(yj - yi)));
-      if (intersect)
-        inside = !inside;
-    }
-  }
-
-  info->res = inside;
-}
-
 void DPad::endstop_press_event_cb(lv_event_t *e) {
-  DPad *self = (DPad *)lv_event_get_user_data(e);
-  lv_obj_t *btn = lv_event_get_target(e);
-  uint32_t event_code = lv_event_get_code(e);
-
-  for (int i = 0; i < 4; i++) {
-    if (btn == self->endstopButtons[i]) {
-      if (event_code == LV_EVENT_PRESSED && self->buttonDownCallback) {
-        // self->buttonDownCallback((Direction)i, self->userData);
-      } else if (event_code == LV_EVENT_RELEASED && self->endstopButtonUpCallback) {
-        self->endstopButtonUpCallback((Direction)i, self->userData);
-      }
-      break;
-    }
-  }
+  auto self = static_cast<DPad *>(lv_event_get_user_data(e));
+  for (unsigned i = 0; i < 4; ++i)
+    if (lv_event_get_target(e) == self->endstopButtons[i] && self->endstopButtonUpCallback)
+      self->endstopButtonUpCallback(static_cast<Direction>(i), self->userData);
 }

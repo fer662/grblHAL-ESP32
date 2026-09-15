@@ -265,6 +265,29 @@ The tablet verified and accepted this image through LAN OTA and restarted.
 Post-boot diagnostics and physical release confirmation are pending. No remote
 motion command or connected motion test was run by the agent.
 
+## 0.3.6 larger touchscreen controls
+
+Replaced the original small triangular jog pad with four separated 160 x 112
+pixel buttons and a dedicated row of limit buttons. Retained physical direction
+mapping and all eight operations. Expanded position rows, primary controls,
+cycle settings, mode menu and number pad for the 1280 x 800 display. Disabled
+axes are visually greyed out. Sliding off a jog cancels it and requires lifting
+before another direction can start, including LVGL's same-tick target transfer.
+
+Built and visually inspected the production LVGL widgets in a desktop renderer
+with simulated backend data. Actual LVGL pointer-input assertions passed for
+direction/release, drag cancellation, disabled axes, separate limit controls,
+all eight modes, button bounds/overlap, SHIFT distance entry and numeric limit
+entry. This does not establish real touch calibration or motion timing under
+display load. No remote motion command was issued.
+
+The IDF 5.5.2 normal firmware build passed with 23% of the OTA application
+partition free. Application SHA-256:
+`bd1fcb4352046f087bb08b9b80cd4a018a9a67b40bb973224a2935021b5ed7aa`.
+OTA installation and operator acceptance remain pending; the tablet was not
+reachable during this UI work. See [UI_ROADMAP.md](UI_ROADMAP.md) for previews
+and proposed controls using existing grblHAL features.
+
 ## Hardware acceptance still required
 
 - [ ] Inspect external STEP/DIR pulse widths, jitter, skew and setup/hold at the connector.

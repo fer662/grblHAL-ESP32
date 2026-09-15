@@ -62,7 +62,7 @@ void SettingsScreen::createSettingsContainer() {
 
   // Create close button
   closeButton = lv_btn_create(settingsContainer);
-  lv_obj_set_size(closeButton, 80, 35);
+  lv_obj_set_size(closeButton, 160, 64);
   lv_obj_align(closeButton, LV_ALIGN_TOP_RIGHT, -10, 10);
   lv_obj_set_style_radius(closeButton, 5, 0);
   lv_obj_set_style_bg_color(closeButton, APP_COLOR_ERROR, 0);
@@ -84,8 +84,8 @@ void SettingsScreen::createSettingsContainer() {
 void SettingsScreen::createBuzzerSetting() {
   // Create buzzer setting container
   lv_obj_t *buzzerContainer = lv_obj_create(settingsContainer);
-  lv_obj_set_size(buzzerContainer, SCREEN_WIDTH - 40, 50);
-  lv_obj_align(buzzerContainer, LV_ALIGN_TOP_MID, 0, 80);
+  lv_obj_set_size(buzzerContainer, SCREEN_WIDTH - 80, 80);
+  lv_obj_align(buzzerContainer, LV_ALIGN_TOP_MID, 0, 112);
   lv_obj_set_style_bg_color(buzzerContainer, lv_color_hex(0x2C2C2C), 0);
   lv_obj_set_style_border_width(buzzerContainer, 1, 0);
   lv_obj_set_style_border_color(buzzerContainer, APP_COLOR_BORDER, 0);

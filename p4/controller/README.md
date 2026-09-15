@@ -10,6 +10,13 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
 ## Current scope
 
+**0.3.6 enlarges the touchscreen layout for the 10.1-inch tablet.** Jog targets
+are separated from each other and from limit controls; sliding off a jog requires
+lifting before starting another direction. Position rows, cycle controls, menus
+and the number pad are larger. All eight operations retain their existing
+behavior. See [UI previews and proposed additions](UI_ROADMAP.md) and the
+[desktop pointer regression](tests/ui_preview/README.md).
+
 **0.3.4 adds `H5_OTA_REQUIRE_PAIRING` (default OFF for this LAN).** Set it ON at
 build time to restore temporary-key authentication. Update mode, digest/image
 validation and rollback are retained in either mode; see [OTA.md](OTA.md).

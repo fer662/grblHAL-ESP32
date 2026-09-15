@@ -11,7 +11,7 @@ AxisControls::AxisControls(lv_obj_t *parent, Axis *axis,
     : container(nullptr), axis(axis), toggleCallback(toggleCb),
       zeroCallback(zeroCb), lastPositionText(""), lastDisabledState(false) {
 
-  auto height = 45;
+  auto height = 80;
 
   container = lv_obj_create(parent);
   lv_obj_set_layout(container, LV_LAYOUT_FLEX);
@@ -29,13 +29,13 @@ AxisControls::AxisControls(lv_obj_t *parent, Axis *axis,
   lv_obj_clear_flag(container,
                     LV_OBJ_FLAG_SCROLL_CHAIN | LV_OBJ_FLAG_SCROLLABLE |
                         LV_OBJ_FLAG_SCROLL_MOMENTUM | LV_OBJ_FLAG_SCROLL_ONE);
-  lv_obj_set_size(container, 140, height);
+  lv_obj_set_size(container, 304, height);
 
   char name[2] = {axis->name, '\0'};
   char zeroButtonText[3] = {axis->name, '0', '\0'};
 
   toggleButton = lv_btn_create(container);
-  lv_obj_set_size(toggleButton, 40, height);
+  lv_obj_set_size(toggleButton, 80, height);
   lv_obj_set_style_radius(toggleButton, 0, 0);
   lv_obj_align(toggleButton, LV_ALIGN_LEFT_MID, 0, 0);
 
@@ -45,18 +45,19 @@ AxisControls::AxisControls(lv_obj_t *parent, Axis *axis,
 
   zeroButton = lv_btn_create(container);
   lv_obj_set_style_pad_all(zeroButton, 4, 0);
-  lv_obj_set_size(zeroButton, 100, height);
+  lv_obj_set_size(zeroButton, 224, height);
   lv_obj_align(zeroButton, LV_ALIGN_LEFT_MID, 0, 0);
   lv_obj_set_style_radius(zeroButton, 0, 0);
 
   positionLabel = lv_label_create(zeroButton);
+  lv_obj_set_style_text_font(positionLabel, &lv_font_montserrat_28, 0);
   lv_label_set_text(positionLabel, zeroButtonText);
   lv_obj_align(positionLabel, LV_ALIGN_LEFT_MID, 0, 0);
 
   lv_obj_t *zeroLabel = lv_label_create(zeroButton);
   lv_label_set_text(zeroLabel, zeroButtonText);
   lv_obj_align(zeroLabel, LV_ALIGN_BOTTOM_RIGHT, -4, 0);
-  lv_obj_set_style_text_font(zeroLabel, LV_FONT_SMALL, 0);
+  lv_obj_set_style_text_font(zeroLabel, &lv_font_montserrat_16, 0);
 
   LVCallbackWrapper::add(toggleButton, LV_EVENT_CLICKED,
                          [this](lv_event_t *e) { toggleCallback(); });

@@ -26,6 +26,7 @@ void Numpad::createUI(lv_obj_t *parent) {
   lv_obj_set_style_bg_color(container, lv_color_hex(0x2C2C2C), 0);
   lv_obj_set_style_bg_opa(container, LV_OPA_COVER, 0);
   lv_obj_set_style_border_width(container, 0, 0);
+  lv_obj_set_style_pad_all(container, 0, 0);
   lv_obj_set_style_radius(container, 0, 0);
 
   // Prevent scrolling
@@ -40,11 +41,12 @@ void Numpad::createUI(lv_obj_t *parent) {
   lv_obj_set_style_text_color(promptLabel, lv_color_hex(0xFFFFFF), 0);
   lv_obj_set_style_text_align(promptLabel, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_set_style_text_font(promptLabel, LV_FONT_BIG, 0);
-  lv_obj_align(promptLabel, LV_ALIGN_TOP_MID, 0, 0);
+  lv_obj_align(promptLabel, LV_ALIGN_TOP_MID, 0, 32);
 
   // Create display label
   displayLabel = lv_label_create(container);
-  lv_obj_set_size(displayLabel, SCREEN_WIDTH - 40, 30);
+  lv_obj_set_size(displayLabel, 688, 64);
+  lv_obj_set_style_pad_all(displayLabel, 16, 0);
   lv_obj_set_style_bg_color(displayLabel, lv_color_hex(0x1A1A1A), 0);
   lv_obj_set_style_bg_opa(displayLabel, LV_OPA_COVER, 0);
   lv_obj_set_style_border_width(displayLabel, 1, 0);
@@ -52,23 +54,23 @@ void Numpad::createUI(lv_obj_t *parent) {
   lv_obj_set_style_text_color(displayLabel, lv_color_hex(0x00FF00), 0);
   lv_obj_set_style_text_align(displayLabel, LV_TEXT_ALIGN_RIGHT, 0);
   lv_obj_set_style_text_font(displayLabel, LV_FONT_BIG, 0);
-  lv_obj_align(displayLabel, LV_ALIGN_TOP_MID, 0, 30);
+  lv_obj_align(displayLabel, LV_ALIGN_TOP_MID, 0, 96);
   lv_label_set_text(displayLabel, "0");
 
   // Create number buttons layout with wider buttons and special positioning
   const char *buttonLabels[] = {"7", "8", "9", "4", "5", "6",
                                 "1", "2", "3", "0", ".", "Del"};
-  int buttonWidth = 100;
-  int buttonHeight = 50;
-  int buttonSpacing = 5;
+  int buttonWidth = 160;
+  int buttonHeight = 92;
+  int buttonSpacing = 16;
   int sideButtonWidth = buttonWidth;
-  int sideButtonHeight = 105; // 2 rows + 1 spacing
+  int sideButtonHeight = 2 * buttonHeight + buttonSpacing;
   int numpadWidth =
       4 * buttonWidth + 3 * buttonSpacing; // 3 columns of number buttons
   int totalWidth =
-      numpadWidth + buttonSpacing + 30; // numpad + enter button + spacing
+      numpadWidth;
   int startX = (SCREEN_WIDTH - totalWidth) / 2; // Center with equal margins
-  int startY = 80;
+  int startY = 188;
 
   // Create number buttons (0-11: 7,8,9,4,5,6,1,2,3,0,.,⌫)
   for (int i = 0; i < 12; i++) {

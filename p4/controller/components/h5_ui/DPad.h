@@ -26,10 +26,6 @@ public:
   void setEndstopButtonUpCallback(ButtonUpCallback cb,
                                   void *userData = nullptr);
 
-  static void polygonPoints(Direction dir, lv_area_t coords,
-                            lv_point_t points[3]);
-  static void endstopPolygonPoints(Direction dir, lv_area_t coords,
-                                   lv_point_t points[4]);
   void update();
 
 private:
@@ -45,11 +41,7 @@ private:
   // Cached values to avoid unnecessary updates
   std::array<String, 4> lastEndstopTexts;
 
-  static void draw_event_cb(lv_event_t *e);
-  static void hit_test_cb(lv_event_t *e);
   static void press_event_cb(lv_event_t *e);
-  static void endstop_draw_event_cb(lv_event_t *e);
-  static void endstop_hit_test_cb(lv_event_t *e);
   static void endstop_press_event_cb(lv_event_t *e);
 };
 

@@ -27,8 +27,8 @@ typedef enum {
   TAB_FW_UPDATE = 9,
 } TabID;
 
-static const int verticalSpacing = 5;
-static const int buttonHeight = 47;
+static const int verticalSpacing = 16;
+static const int buttonHeight = 80;
 
 // Normal Operation Mode Implementation
 NormalOperationMode::NormalOperationMode(StateMachine &stateMachine,
@@ -114,6 +114,9 @@ void NormalOperationMode::updateDisplay() {
 void NormalOperationMode::createMainScreen() {
   mainScreen = lv_obj_create(nullptr);
   lv_obj_set_size(mainScreen, SCREEN_WIDTH, SCREEN_HEIGHT);
+  lv_obj_set_style_pad_all(mainScreen, 0, 0);
+  lv_obj_set_style_border_width(mainScreen, 0, 0);
+  lv_obj_set_style_text_font(mainScreen, LV_FONT_BIG, 0);
 
   lv_obj_clear_flag(mainScreen,
                     LV_OBJ_FLAG_SCROLL_CHAIN | LV_OBJ_FLAG_SCROLLABLE |
@@ -159,9 +162,9 @@ void NormalOperationMode::createMainScreen() {
   // Create content container (takes up most of the screen)
   tabContentContainer = lv_obj_create(scr);
   lv_obj_set_size(tabContentContainer, SCREEN_WIDTH,
-                  SCREEN_HEIGHT - 50); // Leave space for buttons
+                  SCREEN_HEIGHT - 96); // Below the navigation bar
   lv_obj_align(tabContentContainer, LV_ALIGN_TOP_MID, 0,
-               50); // Position below buttons
+               96); // Position below navigation
   lv_obj_set_style_bg_color(tabContentContainer, lv_color_hex(0x2C2C2C), 0);
   lv_obj_set_style_border_width(tabContentContainer, 0, 0);
   lv_obj_set_style_pad_all(tabContentContainer, 10, 0);
@@ -252,7 +255,7 @@ void NormalOperationMode::createMainScreen() {
   lv_obj_set_style_text_color(fpsLabel, lv_color_hex(0xFFFFFF), 0);
   lv_obj_set_style_text_font(fpsLabel, LV_FONT_BIG, 0);
   lv_label_set_text(fpsLabel, "0.0 FPS");
-  lv_obj_move_foreground(fpsLabel);
+  lv_obj_add_flag(fpsLabel, LV_OBJ_FLAG_HIDDEN); // Diagnostics already report UI responsiveness.
 }
 
 void NormalOperationMode::createStartStopButtons() {
@@ -333,7 +336,7 @@ void NormalOperationMode::createThreadingStartsButton() {
 
   lv_obj_t *threadingStartsLabel = lv_label_create(threadingStartsButton);
   lv_obj_align(threadingStartsLabel, LV_ALIGN_TOP_MID, 0, 0);
-  lv_label_set_text(threadingStartsLabel, "T. STARTS");
+  lv_label_set_text(threadingStartsLabel, "THREAD STARTS");
 
   // Add click handler to show numpad
   LVCallbackWrapper::add(threadingStartsButton, LV_EVENT_CLICKED,
@@ -394,7 +397,7 @@ void NormalOperationMode::createConeRatioButton() {
 
   lv_obj_t *coneRatioLabel = lv_label_create(coneRatioButton);
   lv_obj_align(coneRatioLabel, LV_ALIGN_TOP_MID, 0, 0);
-  lv_label_set_text(coneRatioLabel, "C. RATIO");
+  lv_label_set_text(coneRatioLabel, "CONE RATIO");
 
   // Add click handler to show numpad
   LVCallbackWrapper::add(coneRatioButton, LV_EVENT_CLICKED,
@@ -411,8 +414,7 @@ void NormalOperationMode::createRpmButton() {
   // Create RPM button in the navigation bar
   rpmButton = lv_btn_create(tabSelector->getNavigationBar());
 
-  lv_obj_set_size(rpmButton, 90,
-                  45); // Smaller size for navigation bar
+  lv_obj_set_size(rpmButton, 240, 64);
   lv_obj_set_style_radius(rpmButton, 5, LV_PART_MAIN);
   lv_obj_set_style_text_color(rpmButton, lv_color_hex(0xFFFFFF), 0);
   lv_obj_set_style_pad_all(rpmButton, 4, LV_PART_MAIN);
@@ -479,9 +481,9 @@ void NormalOperationMode::createPitchButtons() {
   // Create container for pitch buttons
   pitchContainer = lv_obj_create(mainScreen);
   lv_obj_add_flag(pitchContainer, LV_OBJ_FLAG_CLICKABLE);
-  const int signButtonWidth = 40;
+  const int signButtonWidth = 80;
   const int borderWidth = 2;
-  const int pitchButtonWidth = 100;
+  const int pitchButtonWidth = 222;
   lv_obj_set_size(pitchContainer,
                   signButtonWidth + pitchButtonWidth + borderWidth,
                   buttonHeight);
@@ -505,7 +507,7 @@ void NormalOperationMode::createPitchButtons() {
   pitchButton = lv_btn_create(pitchContainer);
   pitchSignButton = lv_btn_create(pitchContainer);
 
-  lv_obj_set_size(pitchButton, pitchButtonWidth, 50);
+  lv_obj_set_size(pitchButton, pitchButtonWidth, buttonHeight);
   lv_obj_align(pitchButton, LV_ALIGN_RIGHT_MID, 0, 0);
   lv_obj_set_style_bg_color(pitchButton, lv_color_hex(0x2196F3), 0); // Blue
   lv_obj_set_style_bg_color(pitchButton, lv_color_hex(0x1976D2),
@@ -514,7 +516,7 @@ void NormalOperationMode::createPitchButtons() {
   lv_obj_set_style_text_color(pitchButton, lv_color_hex(0xFFFFFF), 0);
   lv_obj_set_style_pad_all(pitchButton, 6, LV_PART_MAIN);
 
-  lv_obj_set_size(pitchSignButton, signButtonWidth, 50);
+  lv_obj_set_size(pitchSignButton, signButtonWidth, buttonHeight);
   lv_obj_align(pitchSignButton, LV_ALIGN_LEFT_MID, 0, 0);
   lv_obj_set_style_bg_color(pitchSignButton, lv_color_hex(0x2196F3), 0); // Blue
   lv_obj_set_style_bg_color(pitchSignButton, lv_color_hex(0x1976D2),
@@ -592,7 +594,7 @@ void NormalOperationMode::createDPad() {
       &NormalOperationMode::dpadEndstopButtonUpCallback, this);
 
   // Position the DPad on the right side of the screen, below the navigation bar
-  lv_obj_align(dpad->getContainer(), LV_ALIGN_TOP_RIGHT, -5, 5);
+  lv_obj_align(dpad->getContainer(), LV_ALIGN_TOP_RIGHT, -24, 104);
 
   // Move DPad to front so it's always visible
   lv_obj_move_foreground(dpad->getContainer());
@@ -1006,38 +1008,29 @@ void NormalOperationMode::updateRpmButton() {
 }
 
 void NormalOperationMode::repositionButtons(int targetMode) {
-  // Start with the RPM button as the anchor point
-  lv_obj_t *currentAnchor = rpmButton;
+  // Stable, roomy columns: position/feed controls, cycle settings, then jog.
+  lv_obj_set_pos(xAxisControls->getContainer(), 24, 112);
+  lv_obj_set_pos(zAxisControls->getContainer(), 24, 208);
+  lv_obj_set_pos(pitchContainer, 24, 318);
+  lv_obj_set_size(stepButton, 304, buttonHeight);
+  lv_obj_set_pos(stepButton, 24, 414);
+  lv_obj_set_size(startStopButton, 304, 88);
+  lv_obj_set_pos(startStopButton, 24, 534);
+  lv_obj_set_size(shiftButton, 240, 88);
+  lv_obj_set_pos(shiftButton, 352, 534);
 
-  // Position cone ratio button if it should be shown
-  if (coneRatioButton != nullptr && (targetMode == MODE_CONE)) {
-    lv_obj_align_to(coneRatioButton, currentAnchor, LV_ALIGN_OUT_BOTTOM_MID, 0,
-                    verticalSpacing);
-    currentAnchor = coneRatioButton;
-  }
-
-  // Position aux toggle button if it should be shown
-  if (auxToggleButton != nullptr &&
-      (targetMode == MODE_TURN || targetMode == MODE_FACE ||
-       targetMode == MODE_THREAD || targetMode == MODE_ELLIPSE)) {
-    lv_obj_align_to(auxToggleButton, currentAnchor, LV_ALIGN_OUT_BOTTOM_MID, 0,
-                    verticalSpacing);
-    currentAnchor = auxToggleButton;
-  }
-
-  // Position threading starts button if it should be shown
-  if (threadingStartsButton != nullptr && (targetMode == MODE_THREAD)) {
-    lv_obj_align_to(threadingStartsButton, currentAnchor,
-                    LV_ALIGN_OUT_BOTTOM_MID, 0, verticalSpacing);
-    currentAnchor = threadingStartsButton;
-  }
-
-  // Position passes button if it should be shown
-  if (passesButton != nullptr && isPassMode()) {
-    lv_obj_align_to(passesButton, currentAnchor, LV_ALIGN_OUT_BOTTOM_MID, 0,
-                    verticalSpacing);
-    currentAnchor = passesButton;
-  }
+  int y = 112;
+  auto place = [&y](lv_obj_t *button) {
+    lv_obj_set_size(button, 240, buttonHeight);
+    lv_obj_set_pos(button, 352, y);
+    y += buttonHeight + verticalSpacing;
+  };
+  if (targetMode == MODE_CONE) place(coneRatioButton);
+  if (targetMode == MODE_TURN || targetMode == MODE_FACE ||
+      targetMode == MODE_THREAD || targetMode == MODE_ELLIPSE) place(auxToggleButton);
+  if (targetMode == MODE_THREAD) place(threadingStartsButton);
+  if (targetMode == MODE_TURN || targetMode == MODE_FACE || targetMode == MODE_CUT ||
+      targetMode == MODE_THREAD || targetMode == MODE_ELLIPSE) place(passesButton);
 }
 
 void NormalOperationMode::updateStartStopButton(bool force) {

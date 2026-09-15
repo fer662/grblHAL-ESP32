@@ -374,8 +374,9 @@ static void ui_task(void *)
     status_label = lv_label_create(lv_scr_act());
     lv_obj_set_style_text_color(status_label, APP_COLOR_WARNING, 0);
     lv_obj_set_style_text_align(status_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_width(status_label, 1000);
-    lv_obj_align(status_label, LV_ALIGN_BOTTOM_MID, 0, -15);
+    lv_obj_set_width(status_label, SCREEN_WIDTH - 48);
+    lv_obj_set_style_text_font(status_label, &lv_font_montserrat_18, 0);
+    lv_obj_align(status_label, LV_ALIGN_BOTTOM_MID, 0, -18);
     lv_obj_add_flag(status_label,LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(status_label,[](lv_event_t *) { show_diagnostics(); },LV_EVENT_CLICKED,nullptr);
     h5_ui_sync();

@@ -20,17 +20,17 @@ CompactTabSelector::CompactTabSelector(lv_obj_t *parent, lv_coord_t width,
 
   // Create navigation bar (full width, 40px height)
   navigationBar = lv_obj_create(container);
-  lv_obj_set_size(navigationBar, SCREEN_WIDTH, LV_SIZE_CONTENT);
-  lv_obj_set_style_pad_left(navigationBar, 10, LV_PART_MAIN);
-  lv_obj_set_style_pad_right(navigationBar, 10, LV_PART_MAIN);
-  lv_obj_set_style_pad_ver(navigationBar, 5, LV_PART_MAIN);
+  lv_obj_set_size(navigationBar, SCREEN_WIDTH, 96);
+  lv_obj_set_style_pad_left(navigationBar, 24, LV_PART_MAIN);
+  lv_obj_set_style_pad_right(navigationBar, 24, LV_PART_MAIN);
+  lv_obj_set_style_pad_ver(navigationBar, 16, LV_PART_MAIN);
   lv_obj_set_style_radius(navigationBar, 0, LV_PART_MAIN);
 
   lv_obj_align(navigationBar, LV_ALIGN_TOP_MID, 0, 0);
   // lv_obj_set_style_bg_color(navigationBar, lv_color_hex(0xFF0000), 0);
   lv_obj_set_style_border_width(navigationBar, 0, 0);
   lv_obj_set_flex_flow(navigationBar, LV_FLEX_FLOW_ROW);
-  lv_obj_set_style_pad_column(navigationBar, 10, LV_PART_MAIN);
+  lv_obj_set_style_pad_column(navigationBar, 24, LV_PART_MAIN);
   lv_obj_set_style_flex_cross_place(navigationBar, LV_FLEX_ALIGN_CENTER,
                                     LV_PART_MAIN);
 
@@ -82,7 +82,7 @@ CompactTabSelector::~CompactTabSelector() {
 
 void CompactTabSelector::createCompactButton() {
   compactButton = lv_btn_create(navigationBar);
-  lv_obj_set_size(compactButton, 140, 45);
+  lv_obj_set_size(compactButton, 304, 64);
   lv_obj_set_style_pad_ver(compactButton, 0, LV_PART_MAIN);
   lv_obj_set_style_pad_hor(compactButton, 0, LV_PART_MAIN);
 
@@ -187,7 +187,7 @@ void CompactTabSelector::hideFullScreenMenu() {
 
 void CompactTabSelector::createMenuItem(const TabInfo &tab, int index) {
   lv_obj_t *itemBtn = lv_btn_create(menuContainer);
-  lv_obj_set_size(itemBtn, LV_PCT(30), 60);
+  lv_obj_set_size(itemBtn, LV_PCT(30), 88);
   if (tab.id == -999) {
     lv_obj_set_style_bg_color(itemBtn, APP_BTN_STYLE_CANCEL, 0);
     lv_obj_set_style_bg_color(itemBtn, APP_BTN_STYLE_CANCEL_PRESSED,
@@ -203,7 +203,7 @@ void CompactTabSelector::createMenuItem(const TabInfo &tab, int index) {
   lv_obj_t *itemLabel = lv_label_create(itemBtn);
   lv_label_set_text(itemLabel, tab.name.c_str());
   lv_obj_center(itemLabel);
-  lv_obj_set_style_text_font(itemLabel, LV_FONT_DEFAULT, 0);
+  lv_obj_set_style_text_font(itemLabel, &lv_font_montserrat_24, 0);
 
   LVCallbackWrapper::add(itemBtn, LV_EVENT_CLICKED,
                          [this, tabId = tab.id](lv_event_t *e) {
