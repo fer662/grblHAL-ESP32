@@ -229,8 +229,41 @@ axis controls enabled and pairing disabled, SHA-256:
 `9510b28762df9899fe72ccaa5bb84733838b0fd7d1a69975e421c73a7d8669cf`.
 The operator's photo supplied the current paired-only firmware's temporary key;
 the real tablet authenticated, verified and accepted the update, then restarted.
-The key and device logs remain outside Git. Post-boot HTTP verification awaits
-reopening Diagnostics. No remote motion command has been issued.
+The key and device logs remain outside Git. Subsequent HTTP diagnostics confirmed
+0.3.4 on ota_1 with boot validation complete and pairing disabled. Following the
+operator's movement tests, issued/counted totals matched at rest (X 99818,
+Z 257924), with no controller motion fault, late or overlap counts. No remote
+motion command has been issued.
+
+## 0.3.5 physical axis-disable fix
+
+The X/Z disable buttons previously changed only UI flags and cancelled jogs.
+They never updated the driver enable mask, so native indefinite idle-hold kept
+the motors energized. The UI now requests a per-axis hardware disable. The grbl
+task issues native STOP to cancel assisted operations and flush motion queues,
+retains torque during deceleration and the final pulse, then applies the mask.
+Later wake/hold callbacks respect disabled axes. Requests survive core resets;
+power-on starts with axes available as before. Rapid toggles still complete a
+stop before applying the latest request. New submissions are rejected while
+transitioning; disabled-axis G-code is rejected and a pulse-level guard prevents
+silent stepping with a disabled output. UI and read-only diagnostics expose the
+pending/applied disable state (mask X=1, Z=4).
+
+Current, sense-resistor assumptions, hold percentage, microsteps, calibration and
+grblHAL core are unchanged. The operator explicitly asked to preserve the
+existing current and defer further current investigation.
+
+Host tests of the actual enable/request/validation functions passed for both
+normal and bench builds, including X/Z polarity, stop-before-release, final
+pulse and planner drain, rapid toggles, reset persistence, disabled-axis moves,
+full-circle arcs and G28/G30 rejection. The core cancellation/completion race
+test also passed. The IDF 5.5.2 normal build passed; enable, pulse-start and fault
+routines remain in IRAM. Existing LVGL enum and unused-variable warnings remain.
+Application SHA-256:
+`81ef39bcd5eb91980dc190605316263061faf2185ff2d102fb322ebcb4595c75`.
+The tablet verified and accepted this image through LAN OTA and restarted.
+Post-boot diagnostics and physical release confirmation are pending. No remote
+motion command or connected motion test was run by the agent.
 
 ## Hardware acceptance still required
 

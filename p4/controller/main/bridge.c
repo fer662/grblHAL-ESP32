@@ -32,6 +32,7 @@ static on_report_handlers_init_ptr previous_report_init;
 
 static uint32_t submit(const char *line)
 {
+    if (h5_axis_change_pending()) return 0;
     if (!commands || !line || strlen(line) >= sizeof(current.text) - 1 || strchr(line, '\n') || strchr(line, '\r')) return 0;
     request_t request;
     h5_critical_enter(&lock, 1000 + __LINE__);

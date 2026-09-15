@@ -40,6 +40,11 @@ static on_unknown_sys_command_ptr previous_command;
 static delay_callback_ptr delayed_callback;
 static volatile bool running, fault;
 static volatile bool outputs_ready;
+// UI intent survives core resets; only the grbl task applies it after stopping.
+static uint8_t disabled_requested;
+static volatile uint8_t disabled_applied;
+static bool axis_stop_requested, axis_change_pending;
+static axes_signals_t enables_requested;
 static axes_signals_t enable_invert = {.mask = DEFAULT_ENABLE_SIGNALS_INVERT_MASK};
 bool h5_motor_controls_enabled(void) { return !H5_BENCH_ONLY; }
 static volatile unsigned pulse_phase; // 0 idle, 1 direction setup, 2 pulse high, 3 hold
@@ -92,13 +97,59 @@ static void IRAM_ATTR steps_write(uint8_t mask)
 static void IRAM_ATTR enable(axes_signals_t axes, bool hold)
 {
     irq_disable();
+    enables_requested = axes;
     if (H5_BENCH_ONLY || fault || !outputs_ready) {
         gpio_ll_set_level(&GPIO, H5_X_ENABLE, 1);
         gpio_ll_set_level(&GPIO, H5_Z_ENABLE, 0);
     } else {
+        axes.mask &= ~disabled_applied;
         axes.mask ^= enable_invert.mask;
         gpio_ll_set_level(&GPIO, H5_X_ENABLE, axes.x);
         gpio_ll_set_level(&GPIO, H5_Z_ENABLE, axes.z);
+    }
+    irq_enable();
+}
+bool h5_axis_change_pending(void)
+{
+    irq_disable();
+    bool pending = axis_change_pending;
+    irq_enable();
+    return pending;
+}
+void h5_axis_set_disabled(char axis, bool disabled)
+{
+    uint8_t bit = axis == 'X' ? X_AXIS_BIT : axis == 'Z' ? Z_AXIS_BIT : 0;
+    irq_disable();
+    uint8_t next = disabled ? disabled_requested | bit : disabled_requested & ~bit;
+    if (next != disabled_requested) {
+        disabled_requested = next;
+        axis_stop_requested = axis_change_pending = true;
+    }
+    irq_enable();
+}
+static void axis_enable_poll(void)
+{
+    irq_disable();
+    bool stop = axis_stop_requested;
+    axis_stop_requested = false;
+    bool pending = axis_change_pending;
+    irq_enable();
+    if (stop) {
+        // Native STOP decelerates and discards the planner and input queues.
+        // Keep torque until the final pulse, including when leaving spindle sync.
+        h5_cycle_cancel();
+        h5_spindle_follow_braking();
+        protocol_enqueue_realtime_command(CMD_STOP);
+        return;
+    }
+    if (!pending || (sys.rt_exec_state & EXEC_STOP) || !h5_motion_idle() ||
+        st_is_stepping() || plan_get_current_block() || h5_cycle_busy() ||
+        !(state_get() == STATE_IDLE || state_get() == STATE_ALARM)) return;
+    irq_disable();
+    if (!axis_stop_requested) {
+        disabled_applied = disabled_requested;
+        axis_change_pending = false;
+        enable(enables_requested, true);
     }
     irq_enable();
 }
@@ -188,7 +239,7 @@ static void IRAM_ATTR pulse_start(stepper_t *stepper)
 {
     if (fault) return;
     h5_spindle_block(stepper);
-    if (stepper->step_out.y) { h5_motion_fault(); return; }
+    if (stepper->step_out.y || (stepper->step_out.mask & disabled_applied)) { h5_motion_fault(); return; }
     if (pulse_phase && (stepper->step_out.mask || stepper->dir_changed.mask)) {
         diag.overlaps++;
         h5_motion_fault();
@@ -298,6 +349,7 @@ static void delay_ms(uint32_t ms, delay_callback_ptr callback)
 static void realtime(sys_state_t state)
 {
     previous_realtime(state);
+    axis_enable_poll();
     h5_serial_poll();
     h5_spindle_poll();
     h5_bridge_poll();
@@ -453,12 +505,24 @@ void h5_driver_snapshot(h5_diagnostics_t *s)
     s->late = diag.late; s->overlap = diag.overlaps; s->fault = fault;
     s->deadline_kind = diag.deadline_kind; s->deadline_elapsed = diag.deadline_elapsed;
     s->deadline_period = diag.deadline_period; s->deadline_counter = diag.deadline_counter;
+    s->disabled_requested = disabled_requested; s->disabled_applied = disabled_applied;
+    s->axis_change_pending = axis_change_pending;
     irq_enable();
     s->enable_x = gpio_get_level(H5_X_ENABLE); s->enable_z = gpio_get_level(H5_Z_ENABLE);
 }
 static status_code_t validate(modal_groups_t *commands, parser_state_t *state, parser_block_t *block, spindle_t *spindle)
 {
     if(h5_update_active() || !h5_ui_ready())return Status_IdleError;
+    if (h5_axis_change_pending()) return Status_IdleError;
+    // Include full-circle arcs and G28/G30, which can move without X/Z words.
+    if (((disabled_applied & X_AXIS_BIT) && (block->words.x || block->words.u)) ||
+        ((disabled_applied & Z_AXIS_BIT) && (block->words.z || block->words.w)) ||
+        (disabled_applied && ((commands->G1 && (block->modal.motion == MotionMode_CwArc ||
+            block->modal.motion == MotionMode_CcwArc)) ||
+            block->non_modal_command == NonModal_GoHome_0 || block->non_modal_command == NonModal_GoHome_1))) {
+        hal.stream.write("[MSG:Axis disabled]\r\n");
+        return Status_SettingDisabled;
+    }
     // Core uses three-axis storage; an absent Y must not silently move virtually.
     if (block->words.y || block->words.v) {
         hal.stream.write("[MSG:P4 has no Y axis]\r\n");

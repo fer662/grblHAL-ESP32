@@ -106,6 +106,7 @@ void h5_diagnostics_serve(int fd)
         "\"ready\":%u,\"state\":\"%s\",\"alarm\":%d,\n"
         "  \"ota_pairing_required\":%s,\"ota_validation_pending\":%s,\n"
         "  \"motor_enables_locked\":%s,\"enable_pins\":[%u,%u],\"position_steps_xz\":[%ld,%ld],\n"
+        "  \"axis_disable\":{\"requested_mask\":%u,\"applied_mask\":%u,\"pending\":%s},\n"
         "  \"encoder_counts\":%lld,\"encoder_cpr\":1200,\"rpm\":%.3f,\"simulated\":%u,"
         "\"tracking\":%u,\"waiting_index\":%u,\"sync_fault\":\"%s\",\n"
         "  \"issued_steps_xz\":[%lu,%lu],\"counted_steps_xz\":[%ld,%ld],"
@@ -120,6 +121,7 @@ void h5_diagnostics_serve(int fd)
         (unsigned long)now_ms(), (unsigned long)(now_ms() - s.sampled_ms), state.ready, state.state, state.alarm,
         update.pairing_required?"true":"false", update.validation_pending?"true":"false",
         h5_motor_controls_enabled()?"false":"true", s.enable_x, s.enable_z, (long)state.position[0], (long)state.position[2],
+        s.disabled_requested, s.disabled_applied, s.axis_change_pending?"true":"false",
         (long long)s.encoder, (double)s.rpm, s.simulated, s.tracking, s.waiting, s.sync_fault,
         (unsigned long)s.x_pulses, (unsigned long)s.z_pulses, (long)s.x_counted, (long)s.z_counted,
         s.fault, (unsigned long)s.late, (unsigned long)s.overlap, (unsigned long)s.isr_us,

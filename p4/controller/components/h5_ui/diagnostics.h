@@ -16,6 +16,8 @@ typedef struct {
     uint32_t tmc_ioin, tmc_chopconf, tmc_status;
     bool fault, tracking, waiting, simulated, tmc_transport, tmc_present, tmc_configured;
     uint8_t enable_x, enable_z;
+    uint8_t disabled_requested, disabled_applied;
+    bool axis_change_pending;
     char sync_fault[16];
 } h5_diagnostics_t;
 void h5_diagnostics_start(void); // Local UI/USB only; expires after 30 minutes.

@@ -37,6 +37,8 @@ bool h5_operation_claim(unsigned owner);
 void h5_operation_release(unsigned owner);
 bool h5_motion_idle(void);
 bool h5_motor_controls_enabled(void); // Build capability, not the instantaneous enable pin state.
+void h5_axis_set_disabled(char axis, bool disabled); // Thread-safe request; stop before removing torque.
+bool h5_axis_change_pending(void);
 void h5_bridge_init(void);
 void h5_bridge_flush(void); // grbl task only; discard requests on stream reset
 void h5_bridge_poll(void); // grbl task only

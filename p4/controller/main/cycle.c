@@ -53,7 +53,7 @@ void h5_cycle_snapshot(h5_cycle_status_t *s)
 }
 bool h5_cycle_request(const h5_cycle_config_t *c)
 {
-    if (h5_follow_busy() || h5_update_active())
+    if (h5_follow_busy() || h5_update_active() || h5_axis_change_pending())
         return false;
     if (!h5_operation_claim(H5_OWNER_PROFILE))
         return false;

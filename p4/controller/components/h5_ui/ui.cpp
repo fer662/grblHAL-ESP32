@@ -105,9 +105,9 @@ void markAxis0(Axis *a)
 void setAxisDisabled(Axis *a, bool disabled)
 {
     held_axis = nullptr;
-    h5_bridge_cancel();
+    h5_axis_set_disabled(a->name, disabled);
     a->disabled = disabled;
-    notice = disabled ? "Axis disabled" : "Axis available — motor outputs remain off";
+    notice = disabled ? "" : "Axis available";
 }
 void setLeftStop(Axis *a, long value) { held_axis = nullptr; h5_bridge_cancel(); a->leftStop = value; }
 void setRightStop(Axis *a, long value) { held_axis = nullptr; h5_bridge_cancel(); a->rightStop = value; }
@@ -273,7 +273,7 @@ void h5_ui_sync()
     if (diagnostics_label && !lv_obj_has_flag(diagnostics_panel, LV_OBJ_FLAG_HIDDEN)) {
         h5_diagnostics_t d; h5_diagnostics_snapshot(&d);
         h5_update_status_t net; h5_update_snapshot(&net);
-        char text[900];
+        char text[1000];
         snprintf(text,sizeof(text),
             "Diagnostics | %s | %s\n"
             "Wi-Fi: %s\nhttp://%s:8080/diagnostics\n"
@@ -282,6 +282,7 @@ void h5_ui_sync()
             "Motion fault: %u | Sync: %s | Late: %lu | Overlap: %lu\n"
             "TMC5160: %s | Configured: %u | IOIN: %08lx\n"
             "CHOPCONF: %08lx | DRV_STATUS: %08lx\n"
+            "Axis disable X/Z: %u/%u | %s\n"
             "Sample age: %lu ms | TMC read age: %lu ms\n"
             "Read-only access on this Wi-Fi for 30 minutes.\n"
             "BACK keeps logging available; STOP closes access.",
@@ -291,6 +292,7 @@ void h5_ui_sync()
             (unsigned long)d.z_pulses,(long)d.z_counted,d.fault,d.sync_fault,
             (unsigned long)d.late,(unsigned long)d.overlap,d.tmc_present?"present":"missing",
             d.tmc_configured,(unsigned long)d.tmc_ioin,(unsigned long)d.tmc_chopconf,(unsigned long)d.tmc_status,
+            !!(d.disabled_applied&1),!!(d.disabled_applied&4),d.axis_change_pending?"stopping":"applied",
             (unsigned long)((uint32_t)millis()-d.sampled_ms),(unsigned long)((uint32_t)millis()-d.tmc_sampled_ms));
         lv_label_set_text(diagnostics_label,text);
     }
@@ -298,6 +300,8 @@ void h5_ui_sync()
         String text = status.ready ? status.state : "Starting controller";
         text += h5_motor_controls_enabled() ? "  |  Axis controls enabled" : "  |  Motor outputs disabled";
         text += "  |  Tap for diagnostics";
+        if (h5_axis_change_pending()) text += "\nStopping before changing motor enable";
+        else if (x.disabled || z.disabled) text += String("\nMotor released:") + (x.disabled?" X":"") + (z.disabled?" Z":"");
         if (!notice.empty()) text += "\n" + notice;
         lv_label_set_text(status_label, text.c_str());
     }

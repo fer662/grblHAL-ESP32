@@ -54,7 +54,10 @@ lathe. See [wireless commissioning](WIRELESS_COMMISSIONING.md).
   buffer errors cancel the command stream rather than executing truncated input.
 - Normal grblHAL motor-enable control, with the existing inversion settings
   (X active low, Z active high) and idle-hold behavior. Startup, update mode and
-  latched driver faults inhibit enables. The normal build excludes the encoder
+  latched driver faults inhibit enables. The X/Z label buttons stop pending
+  motion before releasing the selected motor. Disabled axes stay released across
+  subsequent idle-hold/wake requests and core resets, until enabled on screen
+  (or the tablet restarts). The normal build excludes the encoder
   simulator, GPIO encoder self-test and deliberate interrupt-stall test.
   An explicit `-DH5_BENCH_ONLY=ON` CMake build retains the disconnected fixture;
   all pulse-producing bench scripts require that build and a disconnected tablet.
@@ -235,8 +238,10 @@ idf.py -C p4/controller -B build-bench -DH5_BENCH_ONLY=ON -DH5_OTA_REQUIRE_PAIRI
 Check the selected build and device `$I` identity before any pulse-producing
 bench script. The `verify_*.py` motion suites are not connected-lathe procedures.
 The host-only `tests/enable_outputs_test.py` checks the actual driver's enable
-callback for axis masks, inversion, idle-hold requests, startup inhibition, fault
-shutdown and the bench compile gate without accessing hardware.
+callback and disable request handling for axis masks, inversion, idle-hold,
+stop-before-release, final pulse/planner drain, rapid toggles, reset persistence,
+disabled-axis G-code rejection, startup/fault inhibition and the bench compile
+gate without accessing hardware.
 
 ## Upstream updates
 

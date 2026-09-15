@@ -88,7 +88,7 @@ void h5_follow_snapshot(h5_cycle_status_t *s)
 }
 bool h5_follow_request(const h5_follow_config_t *c)
 {
-    if (h5_cycle_busy() || h5_update_active())
+    if (h5_cycle_busy() || h5_update_active() || h5_axis_change_pending())
         return false;
     if (!h5_operation_claim(H5_OWNER_FOLLOW))
         return false;
