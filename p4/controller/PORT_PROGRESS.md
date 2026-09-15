@@ -162,18 +162,44 @@ Private logs: `diagnostics-032-final.log`, `ota-diagnostics-032-final.log`,
 The earlier full 20-suite acceptance applies to 0.3.1, not automatically to this
 new diagnostic sampling/network workload. Hardware acceptance remains below.
 
+## First connected encoder and TMC checks, 2026-09-15
+
+The operator confirmed that one complete hand-turned spindle revolution in each
+direction produces the expected encoder count change. This checks the real
+encoder's count scale and reversal, not powered-speed accuracy or thread phase
+under load. The earlier 30-second wireless baseline contained 103 stationary
+samples at count 2,128, no connection errors and no controller motion faults.
+
+Before a tablet restart, the TMC5160 responded with IOIN `30000040` but the boot
+initialization flag was false and CHOPCONF was `10410150`. After the operator
+restarted the tablet, six fresh observations (uptime approximately 20–30 seconds)
+reported transport OK, device present, configured true and CHOPCONF `17008425`.
+That readback matches initialization, including two microsteps and interpolation.
+Enable GPIOs remained X=1/Z=0; issued/counted step totals were zero after reboot
+and controller fault counters stayed clear. No remote motion or register-write
+command was sent. Log: `tmc-restart-20260915-142454.jsonl` in the private backup
+folder.
+
+This is consistent with the driver becoming available only after the original
+boot; the exact cause of the earlier initialization failure is not established.
+The current diagnostic's 1,700 mA and 75 mOhm fields are requested configuration,
+not measured current or independent current-register readback. Full current,
+electrical enable/STEP/DIR, powered spindle and loaded-drive checks remain open.
+
 ## Hardware acceptance still required
 
 - [ ] Inspect external STEP/DIR pulse widths, jitter, skew and setup/hold at the connector.
-- [ ] Verify the actual geared spindle encoder, directions, pulse counts and phase.
-- [ ] Connect the TMC5160 with outputs disabled and verify actual register/current settings.
+- [x] Operator verified real spindle counts per hand-turned revolution in both directions.
+- [ ] Verify powered spindle measurement and actual thread phase.
+- [x] TMC5160 detected after restart; initialization and CHOPCONF readback passed with enables locked.
+- [ ] Complete TMC current-register and physical drive-setting validation.
 - [ ] Confirm physical speaker output and touch behavior with an operator.
 - [ ] Establish machine origin, travel, clearance and stop behavior with the actual drives.
 - [ ] Validate loaded acceleration, reversal, thread entry/exit and all eight operations.
 - [ ] Investigate the breakout/tablet battery-dependent power behavior after the refactor.
 
 No software test can mark these hardware checks complete. Internal pulse counters
-observe MCU GPIO only; the current TMC5160 report correctly says the device is
-missing. The internal pulse-service measurements above are not constant
+observe MCU GPIO only; the real TMC5160 now responds and passes initialization,
+but loaded behavior and actual current have not been measured. The internal pulse-service measurements above are not constant
 10 us pulses or an externally measured jitter bound. Motor enables remain
 locked; the compile-time gate cannot be bypassed with a command or setting.
