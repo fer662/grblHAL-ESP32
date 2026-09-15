@@ -15,6 +15,7 @@ try:
         b.command('M3S300' if rpm>0 else 'M4S300');b.command('$P4PHASE=0')
         before=b.diagnostics();b.command(f'$P4SIMRAMP={target},50,900')
         b.command(f'G33X{x}Z{z}K{pitch}')
+        b.idle()  # Parser acknowledgment alone does not prove motion completion.
         d=b.fields('$P4SYNC','[P4SYNC:');assert d['FAULT']=='NONE',d
         expected=(round(abs(x)*1200),round(abs(z)*200))
         assert tuple(map(int,d['AXIS_STEPS'].split(',')))==expected,d
@@ -35,4 +36,7 @@ try:
     b.command('G33X20K1',error=43) # X speed limit, even though Z could do it
     b.command('')
     b.command('$P4SIM=OFF');b.diagnostics()
+except BaseException:
+    b.fault_diagnostics()
+    raise
 finally:b.close()

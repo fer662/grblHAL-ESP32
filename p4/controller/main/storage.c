@@ -2,6 +2,7 @@
 #include "storage.h"
 #include "bridge.h"
 #include "freertos/FreeRTOS.h"
+#include "critical.h"
 #include "grbl/planner.h"
 #include "grbl/state_machine.h"
 #include "grbl/stepper.h"
@@ -44,24 +45,24 @@ void h5_storage_init(void)
 }
 bool h5_preferences_get(h5_preferences_t *p)
 {
-    portENTER_CRITICAL(&lock);
+    h5_critical_enter(&lock, 5000 + __LINE__);
     bool ok = valid;
     if (ok)
         *p = preferences;
-    portEXIT_CRITICAL(&lock);
+    h5_critical_exit(&lock);
     return ok;
 }
 void h5_preferences_set(const h5_preferences_t *p)
 {
     if (!valid_preferences(p))
         return;
-    portENTER_CRITICAL(&lock);
+    h5_critical_enter(&lock, 5000 + __LINE__);
     if (!valid || memcmp(p, &preferences, sizeof(*p))) {
         preferences = *p;
         valid = dirty = true;
         changed_at = xTaskGetTickCount();
     }
-    portEXIT_CRITICAL(&lock);
+    h5_critical_exit(&lock);
 }
 static bool flash_idle(void)
 {
@@ -100,20 +101,20 @@ void h5_storage_poll(void)
         return;
     h5_preferences_t p;
     uint32_t generation;
-    portENTER_CRITICAL(&lock);
+    h5_critical_enter(&lock, 5000 + __LINE__);
     bool save = dirty && xTaskGetTickCount() - changed_at > pdMS_TO_TICKS(2000);
     p = preferences;
     generation = changed_at;
-    portEXIT_CRITICAL(&lock);
+    h5_critical_exit(&lock);
     if (!save)
         return;
     bool ok = nvs_set_blob(handle, "ui_v1", &p, sizeof(p)) == ESP_OK && nvs_commit(handle) == ESP_OK;
     if (ok) {
         writes++;
-        portENTER_CRITICAL(&lock);
+        h5_critical_enter(&lock, 5000 + __LINE__);
         if (changed_at == generation)
             dirty = false;
-        portEXIT_CRITICAL(&lock);
+        h5_critical_exit(&lock);
     } else
         failures++;
 }

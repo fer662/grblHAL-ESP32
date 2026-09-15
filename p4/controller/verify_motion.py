@@ -8,6 +8,7 @@ import argparse
 import re
 import time
 import serial
+from bench_client import capture_fault
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('port')
@@ -195,12 +196,7 @@ try:
     print('PASS: P4 grblHAL bench suite complete. Physical load, encoder phase, and external waveform measurements still required.', flush=True)
 except BaseException:
     if port.is_open:
-        port.write(b"$P4\n$P4DEADLINE\n$P4TASKS\n")
-        end=time.monotonic()+2
-        while time.monotonic()<end:
-            line=port.readline().decode(errors="replace").strip()
-            if line:print(line,flush=True)
-        port.write(b"\x18")
+        capture_fault(port)
     raise
 finally:
     port.close()

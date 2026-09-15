@@ -204,3 +204,38 @@ remove flash-cache dependencies. The generated linker map confirms the relocated
 functions and literals. Five consecutive fresh-boot reversal tests then passed
 with no deadline misses; the intentional reversal still latched its fault and
 stopped pulses. See final device logs for measured callback times.
+
+
+## Application critical sections (0.3.1)
+
+An early 0.3.1 regression run stopped on a deadline fault; a subsequent steady-Z
+run captured 84 us of timer-interrupt entry lateness. The first failed X run had
+not preserved post-fault diagnostics. Passing retries did not establish a fix.
+
+Application status writers were formatting strings while holding FreeRTOS
+spinlocks. Those locks mask local interrupts; the motion CPU can also wait with
+interrupts masked when the UI/network CPU holds a shared lock. Formatting has now
+moved outside the locks. Locked bodies copy fixed-size snapshots or update small
+state fields; even reset-time status copying avoids formatted output.
+
+`$P4CRITICAL` reports the longest measured application lock body on each CPU since
+the latest motor-timer wake. `BODY_US` excludes lock acquisition and the small
+recording/exit overhead. `SITE` identifies the acquisition: 1xxx bridge.c, 2xxx
+cycle.c, 3xxx follow.c, 4xxx network.c, 5xxx storage.c; the suffix is the source
+line. Measurement entry/exit helpers live in internal RAM, and snapshots publish
+atomically without introducing another cross-core lock. This is a diagnostic of
+these application locks, not a bound on all SDK interrupt masking or on external
+STEP/DIR waveforms.
+
+The post-change load run completed exact 19,200 X / 51,200 Z pulses alongside
+116 Wi-Fi connections, audio and UI updates, with no timing fault. Its final move
+reported lock bodies of 6 us on CPU 0 and 12 us on CPU 1. The spindle and X/Z
+synchronization suites and all 13 tracking ramps also passed on that candidate.
+The final build and full regression results are recorded in
+[PORT_PROGRESS.md](PORT_PROGRESS.md). Deadline/overlap checks remain unchanged.
+
+Bench failures now preserve pulse, deadline, application-lock, spindle, task,
+UI and OTA diagnostics before reset; OTA keys are redacted. Reversal phase tests
+use the actual G33 span: a slow/powered handoff can execute several position-follow
+steps before G33 starts, so assuming every G33 begins exactly at the stop would
+misreport a phase error.

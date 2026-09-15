@@ -12,6 +12,7 @@
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
+#include "critical.h"
 #include "freertos/task.h"
 #include "grbl/planner.h"
 #include "grbl/state_machine.h"
@@ -39,9 +40,11 @@ static uint32_t update_generation;
 static char wifi_ssid[33], wifi_password[65];
 static void message(const char *text)
 {
-    portENTER_CRITICAL(&lock);
-    snprintf(published.message, sizeof(published.message), "%s", text);
-    portEXIT_CRITICAL(&lock);
+    char next[sizeof(published.message)] = {0};
+    snprintf(next, sizeof(next), "%s", text);
+    h5_critical_enter(&lock, 4000 + __LINE__);
+    memcpy(published.message, next, sizeof(next));
+    h5_critical_exit(&lock);
 }
 bool h5_update_active(void) { return atomic_load(&enabled) || validation_pending; }
 bool h5_update_request(void)
@@ -51,20 +54,20 @@ bool h5_update_request(void)
 }
 void h5_update_cancel(void)
 {
-    portENTER_CRITICAL(&lock);
+    h5_critical_enter(&lock, 4000 + __LINE__);
     atomic_store(&requested, false);
     if (!atomic_load(&uploading)) {
         atomic_store(&enabled, false);
         if (!validation_pending)
             h5_operation_release(H5_OWNER_UPDATE);
     }
-    portEXIT_CRITICAL(&lock);
+    h5_critical_exit(&lock);
 }
 void h5_update_snapshot(h5_update_status_t *s)
 {
-    portENTER_CRITICAL(&lock);
+    h5_critical_enter(&lock, 4000 + __LINE__);
     *s = published;
-    portEXIT_CRITICAL(&lock);
+    h5_critical_exit(&lock);
     s->active = h5_update_active();
 }
 static void hex(char *out, const uint8_t *in, size_t count)
@@ -107,11 +110,11 @@ static bool receive(int fd, void *buffer, size_t size)
 static void transfer(int fd)
 {
     uint8_t session_key[16];
-    portENTER_CRITICAL(&lock);
+    h5_critical_enter(&lock, 4000 + __LINE__);
     bool active = atomic_load(&enabled);
     uint32_t generation = update_generation;
     memcpy(session_key, key, sizeof(key));
-    portEXIT_CRITICAL(&lock);
+    h5_critical_exit(&lock);
     if (!active) {
         send(fd, "DISABLED\n", 9, 0);
         return;
@@ -142,11 +145,11 @@ static void transfer(int fd)
     // Closing or expiring update mode must not release the motion owner in
     // the gap between authentication and flash erase. Also reject a handshake
     // from a previous update session, even if the panel was reopened.
-    portENTER_CRITICAL(&lock);
+    h5_critical_enter(&lock, 4000 + __LINE__);
     bool accepted = atomic_load(&enabled) && generation == update_generation;
     if (accepted)
         atomic_store(&uploading, true);
-    portEXIT_CRITICAL(&lock);
+    h5_critical_exit(&lock);
     if (!accepted) {
         send(fd, "DISABLED\n", 9, 0);
         return;
@@ -184,9 +187,9 @@ static void transfer(int fd)
         if ((result = esp_ota_write(ota, buffer, n)) != ESP_OK)
             break;
         received += n;
-        portENTER_CRITICAL(&lock);
+        h5_critical_enter(&lock, 4000 + __LINE__);
         published.percent = received * 100 / size;
-        portEXIT_CRITICAL(&lock);
+        h5_critical_exit(&lock);
     }
     mbedtls_sha256_finish(&digest, actual);
     mbedtls_sha256_free(&digest);
@@ -220,15 +223,17 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START)
         esp_wifi_connect();
     else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
-        portENTER_CRITICAL(&lock);
+        h5_critical_enter(&lock, 4000 + __LINE__);
         published.connected = false;
-        portEXIT_CRITICAL(&lock);
+        h5_critical_exit(&lock);
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = data;
-        portENTER_CRITICAL(&lock);
+        char ip[sizeof(published.ip)] = {0};
+        snprintf(ip, sizeof(ip), IPSTR, IP2STR(&event->ip_info.ip));
+        h5_critical_enter(&lock, 4000 + __LINE__);
         published.connected = true;
-        snprintf(published.ip, sizeof(published.ip), IPSTR, IP2STR(&event->ip_info.ip));
-        portEXIT_CRITICAL(&lock);
+        memcpy(published.ip, ip, sizeof(ip));
+        h5_critical_exit(&lock);
         message("Wi-Fi connected; updates available when idle");
     }
 }
@@ -270,10 +275,10 @@ static void network_task(void *arg)
     for (;;) {
         if (atomic_exchange(&reconfigure, false)) {
             wifi_config_t config = {0};
-            portENTER_CRITICAL(&lock);
-            memcpy(config.sta.ssid, wifi_ssid, strlen(wifi_ssid));
-            snprintf((char *)config.sta.password, sizeof(config.sta.password), "%s", wifi_password);
-            portEXIT_CRITICAL(&lock);
+            h5_critical_enter(&lock, 4000 + __LINE__);
+            memcpy(config.sta.ssid, wifi_ssid, sizeof(config.sta.ssid));
+            memcpy(config.sta.password, wifi_password, sizeof(config.sta.password));
+            h5_critical_exit(&lock);
             if (started)
                 esp_wifi_disconnect();
             esp_wifi_set_config(WIFI_IF_STA, &config);
@@ -343,7 +348,7 @@ void h5_network_poll(void)
         char next_text[33];
         esp_fill_random(next_key, sizeof(next_key));
         hex(next_text, next_key, sizeof(next_key));
-        portENTER_CRITICAL(&lock);
+        h5_critical_enter(&lock, 4000 + __LINE__);
         bool activate = atomic_load(&requested) && !atomic_load(&enabled) &&
                         !atomic_load(&uploading) && h5_operation_claim(H5_OWNER_UPDATE);
         if (activate) {
@@ -355,17 +360,17 @@ void h5_network_poll(void)
             atomic_store(&requested, false);
             enabled_at = now;
         }
-        portEXIT_CRITICAL(&lock);
+        h5_critical_exit(&lock);
         if (activate)
             message("Update mode; motion locked. Upload within five minutes");
     }
-    portENTER_CRITICAL(&lock);
+    h5_critical_enter(&lock, 4000 + __LINE__);
     bool expired = atomic_load(&enabled) && !atomic_load(&uploading) && now - enabled_at > 300000;
     if (expired) {
         atomic_store(&enabled, false);
         h5_operation_release(H5_OWNER_UPDATE);
     }
-    portEXIT_CRITICAL(&lock);
+    h5_critical_exit(&lock);
     if (expired)
         message("Update mode expired");
 }
@@ -408,10 +413,10 @@ status_code_t h5_network_command(sys_state_t state, char *line)
             return Status_InvalidStatement;
         if (!h5_storage_set_wifi(ssid, secret))
             return Status_SettingReadFail;
-        portENTER_CRITICAL(&lock);
+        h5_critical_enter(&lock, 4000 + __LINE__);
         memcpy(wifi_ssid, ssid, sizeof(ssid));
         memcpy(wifi_password, secret, sizeof(secret));
-        portEXIT_CRITICAL(&lock);
+        h5_critical_exit(&lock);
         atomic_store(&reconfigure, true);
         return Status_OK;
     }

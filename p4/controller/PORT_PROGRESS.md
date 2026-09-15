@@ -12,6 +12,8 @@ This is a disconnected Waveshare P4 bench build with X/Z enables hardlocked off.
 - [x] Face and progressive Cut profiles.
 - [x] Ellipse geometry with native lookahead and spindle-progress feed.
 - [x] Gearbox/Cone stop, reversal, reengagement and manual override.
+- [x] Low-speed/hand-spindle position following and transition to powered G33.
+- [x] Core cancellation/completion race fixed with a reproducing host regression.
 - [x] Async manual override/resume; serialized edits to armed feed parameters.
 - [x] Finite touch-jog repeat while held during all three assisted-feed modes.
 - [x] Deliberate depth advance at a completed-depth boundary, retaining final depth.
@@ -22,12 +24,12 @@ This is a disconnected Waveshare P4 bench build with X/Z enables hardlocked off.
 
 See [OPERATIONS.md](OPERATIONS.md), [SPINDLE_TRACKING.md](SPINDLE_TRACKING.md)
 and [OTA.md](OTA.md) for behavior, configuration, limits and recovery.
-Gearbox/Cone have a 30 RPM engagement floor in the current supported bench
-range; lower-speed/hand-spindle behavior is not yet implemented or validated.
-No operation is removed, but this limit must not be mistaken for full original
-behavior at arbitrary hand-rotation speed.
+Gearbox/Cone now use native-planner encoder-position targets at low speed and
+G33 for powered tracking, with 30/35 RPM handover hysteresis. The position follower
+has no RPM engagement floor; the bench simulator tests down to 1 RPM. See
+[HAND_FOLLOW.md](HAND_FOLLOW.md) for phase registration, latency and coverage.
 
-## Regression evidence
+## Previous 0.3.0 regression evidence
 
 Device logs and private backups are outside Git. Results during implementation:
 
@@ -72,9 +74,55 @@ callback, with zero deadline faults; its pulse-high service range was 15.3–71.
 These aggregate maxima include different motion phases and rates. They are not
 worst-case timing guarantees, and no claim is made that every pulse is 10 us.
 
-Application version: `0.3.0`. Built image SHA-256:
+Previous application version: `0.3.0`. Built image SHA-256:
 `346fc8c39bfa5aa6cb8935233cfd91417ac5628593090b9f65fadabb1ba8ff34`.
 Core pin: `f799fd0f284c25d592821f800452cba6fc1ea78a`.
+
+## 0.3.1 software acceptance
+
+**All 20 disconnected-device suites passed on the final image.** This includes
+native spindle/X/Z/ramp motion, concurrent services, hand following, powered
+follow, held fine jogs, operation UI, startup gating, ordinary motion, profiles,
+Turn/Thread, three intentional fault stops, persistence, failed OTA transfers,
+USB/display continuity, actual rollback and actual boot confirmation.
+
+The core is pinned to `09df51bf9f527795920661b47db791181d4f5b2a`.
+Its fifth isolated patch handles simultaneous cycle completion and cancellation.
+The reproducing host test fails against the previous core and passes on this pin;
+host profile geometry and Python syntax checks also passed.
+
+| Final image check | Result |
+| --- | --- |
+| Hand spindle | 1, 5, 15 and 29 RPM, both directions, signed pitch, Cone, 8 mm/rev lead, bounds, stationary settling and manual/G33 handoff passed. Twelve repeated handoff/index-wait cancellations completed without sticking. |
+| Spindle synchronization | Exact 36,000 Z pulses; repeated/multiple-start phase passed. |
+| X/Z synchronized paths | Exact 26,400 X and 11,000 Z pulses; six directional/ramped paths passed. |
+| Spindle ramps | All 13 cases, exact 104,000 Z pulses; peak cutting-window phase error 0.0075 mm. |
+| Concurrent services | Exact 19,200 X and 51,200 Z pulses with audio, UI updates and 129 Wi-Fi connections. |
+| Ordinary motion | Exact GPIO/counter agreement, including a 40,000-pulse counter rollover; cancellation and restart passed. |
+| OTA | Deliberate rejected boot returned to ota_1; the normal update booted and confirmed ota_0. No pending validation remains. |
+
+Normal suites reported no unexpected fault, overlap, missed-deadline or receive
+overflow. The intentional stall/reversal/deadline tests latched the expected
+fault and stopped STEP output. No fault thresholds were relaxed.
+
+Earlier 0.3.1 candidates exposed an intermittent timing fault, including an 84 us
+interrupt-entry delay. Application status formatting now happens outside
+interrupt-masked cross-core locks. The final load test's last move reported lock
+bodies of 6 us / 13 us on CPU 0 / CPU 1. `$P4CRITICAL` and fault-preserving host
+diagnostics support further investigation; see [SPINDLE_TRACKING.md](SPINDLE_TRACKING.md)
+for measurement scope and the preserved failure history.
+
+The final normal-motion callback maximum was 47 us; the load run measured 64 us,
+and the X/Z synchronization run measured 149 us. Observed pulse-high service
+values across these normal suites reached 120.5 us. These are aggregate internal
+measurements across different rates and motion stages, **not a worst-case timing
+guarantee or external waveform acceptance**.
+
+Application version: `0.3.1`. Built and OTA-tested image SHA-256:
+`ecc4e9dfb1686635c90004b94afea01576753f06c193a090d56fdaf28a0df4f4`.
+The installed image is confirmed in `ota_0` (`0x210000`). The normal touchscreen
+is left idle with motor enables locked and the synthetic encoder stopped.
+Logs and the final screen capture remain in the private external backup directory.
 
 ## Hardware acceptance still required
 

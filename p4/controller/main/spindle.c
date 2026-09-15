@@ -209,7 +209,7 @@ static bool IRAM_ATTR sim_alarm(gptimer_handle_t timer, const gptimer_alarm_even
 }
 static bool simulate(float rpm)
 {
-    if (!isfinite(rpm) || fabsf(rpm) > 600 || (rpm && fabsf(rpm) < 30)) return false;
+    if (!isfinite(rpm) || fabsf(rpm) > 600 || (rpm && fabsf(rpm) < 1)) return false;
     if (!simulator) {
         gptimer_config_t cfg = {.clk_src = GPTIMER_CLK_SRC_DEFAULT,
             .direction = GPTIMER_COUNT_UP, .resolution_hz = 10000000, .intr_priority = 2};
@@ -328,7 +328,7 @@ status_code_t h5_spindle_command(sys_state_t state, char *line)
     if (!strncmp(line, "P4SIMCHANGE=", 12)) {
         if (state != STATE_IDLE) return Status_IdleError;
         int rpm, delay; char extra;
-        if (sscanf(line + 12, "%d,%d%c", &rpm, &delay, &extra) != 2 || abs(rpm) > 600 || (rpm && abs(rpm) < 30) || delay < 100 || delay > 30000)
+        if (sscanf(line + 12, "%d,%d%c", &rpm, &delay, &extra) != 2 || abs(rpm) > 600 || (rpm && abs(rpm) < 1) || delay < 100 || delay > 30000)
             return Status_InvalidStatement;
         ramp_pending = false;
         next_rpm = rpm; change_at = hal.get_elapsed_ticks() + delay; change_pending = true;
@@ -338,7 +338,7 @@ status_code_t h5_spindle_command(sys_state_t state, char *line)
         if (state != STATE_IDLE || !sim_running) return Status_IdleError;
         int rpm, rate, delay; char extra;
         if (sscanf(line + 10, "%d,%d,%d%c", &rpm, &rate, &delay, &extra) != 3 ||
-            abs(rpm) < 30 || abs(rpm) > 600 || rpm * sim_rpm <= 0 ||
+            abs(rpm) < 1 || abs(rpm) > 600 || rpm * sim_rpm <= 0 ||
             rate < 1 || rate > 1000 || delay < 100 || delay > 30000)
             return Status_InvalidStatement;
         change_pending = false;

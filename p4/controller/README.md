@@ -1,9 +1,10 @@
 # H5 grblHAL ESP32-P4 port
 
 This is a separate ESP-IDF application using a pinned `main/grbl` core submodule.
-The core fork contains an isolated spindle-segment timing fix plus opt-in
-RPM feed-forward and acceleration phase compensation, described in
-[spindle tracking](SPINDLE_TRACKING.md). The original ESP32/S3 driver source
+The core fork keeps five small changes separate: spindle timing/acceleration,
+configurable AMASS cutoff and a cancellation/completion race fix. See
+[spindle tracking](SPINDLE_TRACKING.md), [hand following](HAND_FOLLOW.md) and the
+upstream-update table below. The original ESP32/S3 driver source
 remains untouched; its build has not been revalidated against these core changes.
 The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
@@ -20,6 +21,8 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 - The motion linker fragment places the stepper/PID/driver/spindle code and
   constants in internal RAM. Startup blocks motion until audio and hosted Wi-Fi
   initialization finishes; optional failures remain reported as unavailable.
+  Application shared locks use short copies; status formatting happens outside
+  interrupt-masked sections. `$P4CRITICAL` exposes their measured body durations.
   Timer callbacks and core step ISR are in IRAM. Cache-disabled operation is
   **not claimed** for the complete call chain: settings writes and OTA require
   standstill and block competing operation starts.
@@ -52,7 +55,8 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 - X/Z readouts, zero, numeric/continuous/fine jog, machining stops, units,
   original pitch picker, eight operation tabs and cycle parameter controls.
   Gearbox, Cone and Async use a serialized assisted-feed service with manual
-  override and resume. Turn, Thread, Face, Cut and Ellipse use the native planner
+  override and resume. Gearbox/Cone include low-speed encoder-position following
+  and phase-preserving handover to powered G33. Turn, Thread, Face, Cut and Ellipse use the native planner
   through a cycle service with touchscreen preview and controlled cancellation.
   See [assisted cycles](ASSISTED_CYCLES.md) for geometry and operating limits.
 - X TMC5160 SPI setup uses the upstream Trinamic library, with readback and an
@@ -206,8 +210,8 @@ version, settings version, core source inventory and ISR dependencies on every
 core upgrade. Do not advance the core automatically from a moving branch.
 
 The core submodule points to `https://github.com/fer662/grblHAL-core`, branch
-`codex/spindle-tracking`, commit `f799fd0f284c25d592821f800452cba6fc1ea78a`.
-It has four isolated commits over upstream `516e5ad80757bd2eba86bff18feb613ca121dc16`:
+`codex/spindle-tracking`, commit `09df51bf9f527795920661b47db791181d4f5b2a`.
+It has five isolated commits over upstream `516e5ad80757bd2eba86bff18feb613ca121dc16`:
 
 | Commit | Purpose |
 | --- | --- |
@@ -215,6 +219,7 @@ It has four isolated commits over upstream `516e5ad80757bd2eba86bff18feb613ca121
 | `17c1303` | Opt-in RPM feed-forward and acceleration phase tracking. |
 | `28dabc2` | Opt-in rate and acceleration limits for the actual X/Z path. |
 | `f799fd0` | Configurable AMASS cutoff; the upstream default remains 8000 Hz. |
+| `09df51b` | Avoid waiting for a second completion when cancellation and completion coincide. |
 
 The original `codex/spindle-segment-time` branch retains only the first fix.
 Preserve this separation when merging/rebasing upstream; drop a local patch only

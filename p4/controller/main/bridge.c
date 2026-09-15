@@ -3,6 +3,7 @@
 #include <stdatomic.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
+#include "critical.h"
 #include "freertos/queue.h"
 #include "grbl/hal.h"
 #include "grbl/protocol.h"
@@ -33,10 +34,10 @@ static uint32_t submit(const char *line)
 {
     if (!commands || !line || strlen(line) >= sizeof(current.text) - 1 || strchr(line, '\n') || strchr(line, '\r')) return 0;
     request_t request;
-    portENTER_CRITICAL(&lock);
+    h5_critical_enter(&lock, 1000 + __LINE__);
     request.id = ++next_id;
     request.epoch = epoch;
-    portEXIT_CRITICAL(&lock);
+    h5_critical_exit(&lock);
     snprintf(request.text, sizeof(request.text), "%s\n", line);
     if (xQueueSend(commands, &request, 0) != pdTRUE) return 0;
     return request.id;
@@ -50,39 +51,39 @@ void h5_bridge_discard_cycle_commands(void)
 {
     // Service only calls this between parser reads; epoch invalidation discards
     // pending requests without truncating a partially delivered command.
-    portENTER_CRITICAL(&lock); epoch++; portEXIT_CRITICAL(&lock);
+    h5_critical_enter(&lock, 1000 + __LINE__); epoch++; h5_critical_exit(&lock);
 }
 void h5_bridge_flush(void)
 {
     h5_cycle_reset();
     active = acknowledge_error = false;
     reporting_id = 0;
-    portENTER_CRITICAL(&lock);
+    h5_critical_enter(&lock, 1000 + __LINE__);
     epoch++;
     published.stream_generation++;
     realtime_requests = 0;
-    portEXIT_CRITICAL(&lock);
+    h5_critical_exit(&lock);
 }
 void h5_bridge_cancel(void)
 {
     if (h5_cycle_busy()) { h5_cycle_cancel(); return; }
-    portENTER_CRITICAL(&lock);
+    h5_critical_enter(&lock, 1000 + __LINE__);
     epoch++;
     realtime_requests |= 1;
-    portEXIT_CRITICAL(&lock);
+    h5_critical_exit(&lock);
 }
 void h5_bridge_hold(void)
-{ if (h5_cycle_busy()) { h5_cycle_cancel(); return; } portENTER_CRITICAL(&lock); realtime_requests |= 2; portEXIT_CRITICAL(&lock); }
+{ if (h5_cycle_busy()) { h5_cycle_cancel(); return; } h5_critical_enter(&lock, 1000 + __LINE__); realtime_requests |= 2; h5_critical_exit(&lock); }
 void h5_bridge_resume(void)
-{ if (h5_cycle_busy()) return; portENTER_CRITICAL(&lock); realtime_requests |= 4; portEXIT_CRITICAL(&lock); }
+{ if (h5_cycle_busy()) return; h5_critical_enter(&lock, 1000 + __LINE__); realtime_requests |= 4; h5_critical_exit(&lock); }
 void h5_bridge_snapshot(h5_status_t *s)
-{ portENTER_CRITICAL(&lock); *s = published; portEXIT_CRITICAL(&lock); }
+{ h5_critical_enter(&lock, 1000 + __LINE__); *s = published; h5_critical_exit(&lock); }
 bool h5_bridge_active(void) { return active || acknowledge_error; }
 int32_t h5_bridge_read(void)
 {
-    portENTER_CRITICAL(&lock);
+    h5_critical_enter(&lock, 1000 + __LINE__);
     uint32_t generation = epoch;
-    portEXIT_CRITICAL(&lock);
+    h5_critical_exit(&lock);
     if (active && current.epoch != generation) {
         active = false;
         reporting_id = 0;
@@ -108,11 +109,11 @@ static status_code_t report_status(status_code_t status)
 {
     if (!reporting_id) return previous_report(status);
     if (reporting_id != UINT32_MAX) {
-        portENTER_CRITICAL(&lock);
+        h5_critical_enter(&lock, 1000 + __LINE__);
         published.completed_id = reporting_id;
         published.command_status = status;
         if (status != Status_OK) { epoch++; acknowledge_error = true; }
-        portEXIT_CRITICAL(&lock);
+        h5_critical_exit(&lock);
     }
     reporting_id = 0;
     return status;
@@ -133,10 +134,10 @@ void h5_bridge_init(void)
 }
 void h5_bridge_poll(void)
 {
-    portENTER_CRITICAL(&lock);
+    h5_critical_enter(&lock, 1000 + __LINE__);
     uint32_t rt = realtime_requests;
     realtime_requests = 0;
-    portEXIT_CRITICAL(&lock);
+    h5_critical_exit(&lock);
     if (rt & 1) protocol_enqueue_realtime_command(0x85);
     if (rt & 2) protocol_enqueue_realtime_command('!');
     if (rt & 4) protocol_enqueue_realtime_command('~');
@@ -161,11 +162,11 @@ void h5_bridge_poll(void)
     s.rpm = h5_spindle_rpm();
     const char *name = state == STATE_IDLE ? "Ready" : state == STATE_JOG ? "Jogging" : state == STATE_CYCLE ? "Running" : state == STATE_HOLD ? "Held" : state == STATE_ALARM ? "Alarm" : "Stopped";
     snprintf(s.state, sizeof(s.state), "%s", name);
-    portENTER_CRITICAL(&lock);
+    h5_critical_enter(&lock, 1000 + __LINE__);
     s.stream_generation = published.stream_generation;
     s.command_id = next_id;
     s.completed_id = published.completed_id;
     s.command_status = published.command_status;
     published = s;
-    portEXIT_CRITICAL(&lock);
+    h5_critical_exit(&lock);
 }

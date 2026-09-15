@@ -12,6 +12,7 @@ import struct
 import time
 import zlib
 import serial
+from bench_client import capture_fault
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('port')
@@ -250,6 +251,10 @@ try:
     assert any('P4FPUTEST:PASS' in line for line in command('$P4FPUTEST'))
     assert any('P4UI:READY:1' in line for line in command('$P4UI'))
     print('PASS: assisted cycles, multistart phase, parser ownership, cancellation, invalid geometry, FPU and UI.', flush=True)
+except BaseException:
+    if port.is_open:
+        capture_fault(port)
+    raise
 finally:
     if port.is_open:
         port.write(b'\x18'); port.close()

@@ -9,6 +9,7 @@ import argparse
 import re
 import time
 import serial
+from bench_client import capture_fault
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('port')
@@ -63,6 +64,7 @@ def diagnostics(fault=False):
     for axis in ('X', 'Z'):
         issued, _, counted = map(int, d[axis].split(','))
         assert issued == counted, d
+    command('$P4CRITICAL')
     return d
 
 
@@ -176,10 +178,7 @@ try:
         print('PASS: spindle bench suite; UI remained active. Speed transients, lead-in and physical phase still require machine validation.', flush=True)
 except BaseException:
     if port.is_open:
-        port.write(b'$P4DEADLINE\n$P4AUDIO\n$P4OTA\n');end=time.monotonic()+2
-        while time.monotonic()<end:
-            line=port.readline().decode(errors='replace').strip()
-            if line:print(re.sub(r'KEY:[^|]*','KEY:<withheld>',line),flush=True)
+        capture_fault(port)
     raise
 finally:
     if port.is_open:

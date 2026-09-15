@@ -8,6 +8,7 @@ import argparse
 import re
 import time
 import serial
+from bench_client import capture_fault
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('port')
@@ -150,6 +151,10 @@ try:
     after = fields('$P4UI', '[P4UI:')
     assert int(after['UI_UPDATES']) > int(before['UI_UPDATES']) + 100
     print('PASS: ramp tracking, phase compensation, pulse counts and UI liveness.', flush=True)
+except BaseException:
+    if port.is_open:
+        capture_fault(port)
+    raise
 finally:
     if port.is_open:
         port.write(b'\x18')

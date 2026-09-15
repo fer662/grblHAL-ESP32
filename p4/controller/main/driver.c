@@ -3,6 +3,7 @@
  * Bench build: actual STEP/DIR signals, but motor enables always inactive.
  */
 #include "freertos/FreeRTOS.h"
+#include "critical.h"
 #include "freertos/task.h"
 #include <math.h>
 #include <stdio.h>
@@ -254,6 +255,7 @@ static void wake(void)
 {
     if(h5_update_active() || !h5_ui_ready()) {h5_motion_fault();return;}
     if (fault || running) return;
+    h5_critical_reset();
     enable((axes_signals_t){AXES_BITMASK}, false);
     ESP_ERROR_CHECK(gptimer_set_raw_count(step_timer, 0));
     cycles(10000); // 1 ms driver settle before first planner tick
@@ -390,6 +392,10 @@ static status_code_t command(sys_state_t state, char *line)
             snprintf(text + len, sizeof(text) - len, "]\r\n");
             hal.stream.write(text);
         }
+        return Status_OK;
+    }
+    if (!strcmp(line, "P4CRITICAL")) {
+        h5_critical_report();
         return Status_OK;
     }
     if (!strcmp(line, "P4DEADLINE")) {

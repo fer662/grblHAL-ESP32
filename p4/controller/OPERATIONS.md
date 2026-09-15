@@ -54,9 +54,15 @@ The last depth is retained. It never jumps out of a cut halfway through.
   Segment feed represents spindle progress rather than constant path feed.
 - Rate checks project the path onto both axes; spindle-synchronization corrections
   use the actual path acceleration and rate limits.
-- Gearbox/Cone currently engage at **30 RPM or above**. Below that, they stay armed
-  at rest. This is an explicit uncompleted low-speed/hand-spindle compatibility
-  item, arising from native G33's two-index acquisition and five-second timeout.
+- Gearbox/Cone follow encoder positions below 30 RPM, including hand turning and
+  reversal. Targets enter the native accelerated planner without predicting future
+  spindle rotation. Above 35 RPM they transition to G33; the 30/35 RPM hysteresis
+  prevents repeated switching near the threshold. See [HAND_FOLLOW.md](HAND_FOLLOW.md).
+- After manual movement or braking, low-speed feed may show **Waiting for spindle
+  phase** until the spindle reaches the retained axis registration (at most one
+  revolution). A newly armed feed follows immediately, subject to step resolution.
+  Low-speed position following is assisted feed; indexed Thread/Turn recipes keep
+  their existing 30 RPM minimum and G33 lead-in/phase behavior.
 - The supported tracking assumption is physically gradual spindle speed change.
   Sudden synthetic stop/reverse tests exercise cancellation; they do not establish
   loaded tracking capability for arbitrary spindle acceleration.
@@ -69,6 +75,7 @@ The last depth is retained. It never jumps out of a cut halfway through.
 `verify_cycles.py` checks Turn/Thread phase, geometry and cancellation;
 `verify_profiles.py` checks Face/Cut/Ellipse endpoints and queued cancellation;
 `verify_follow.py` checks assisted-feed bounds, phase, stop/reverse and override;
+`verify_hand_follow.py` checks low-speed positions, reversals, bounds and G33 handoff;
 `verify_ui_operations.py` exercises operation buttons, manual gestures, parameter
 edits, pass advance and the OTA panel. Read [PORT_PROGRESS.md](PORT_PROGRESS.md)
 for which suites passed on the final build. Internal PCNT counts and synthetic

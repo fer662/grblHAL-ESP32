@@ -50,7 +50,7 @@ set(CORE_SOURCES
     "${CORE_ROOT}/grbl/my_plugin.c"
     "${CORE_ROOT}/grbl/my_plugin.c"
 )
-idf_component_register(SRCS main.c driver.c serial.c feedback.c bridge.c cycle.c follow.c task_affinity.c network.c storage.c tmc.c "${CORE_ROOT}/trinamic/tmc5160.c" "${CORE_ROOT}/trinamic/common.c" fpu_isr.c fpu_isr.S spindle.c "${CORE_ROOT}/grbl/pid.c" ${CORE_SOURCES}
+idf_component_register(SRCS main.c driver.c serial.c feedback.c bridge.c cycle.c follow.c critical.c task_affinity.c network.c storage.c tmc.c "${CORE_ROOT}/trinamic/tmc5160.c" "${CORE_ROOT}/trinamic/common.c" fpu_isr.c fpu_isr.S spindle.c "${CORE_ROOT}/grbl/pid.c" ${CORE_SOURCES}
     LDFRAGMENTS "motion.lf"
     INCLUDE_DIRS "." "${CORE_ROOT}"
     REQUIRES esp_wifi_remote esp_hosted app_update esp_wifi esp_event esp_netif mbedtls nvs_flash esp_driver_spi h5_ui esp_driver_gpio esp_driver_uart esp_driver_gptimer esp_driver_pcnt esp_timer esp_hw_support)

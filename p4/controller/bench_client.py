@@ -3,6 +3,19 @@ import re
 import time
 import serial
 
+def capture_fault(port):
+    """Capture read-only fault evidence before a reset, redacting the OTA key."""
+    for command in ('$P4', '$P4DEADLINE', '$P4CRITICAL', '$P4SYNC', '$P4TASKS', '$P4UI', '$P4OTA'):
+        print('FAULT DIAGNOSTIC >>> ' + command, flush=True)
+        port.write((command + '\n').encode())
+        end = time.monotonic() + 1
+        while time.monotonic() < end:
+            line = port.readline().decode(errors='replace').strip()
+            if line:
+                print(re.sub(r'KEY:[^|]*', 'KEY:<withheld>', line), flush=True)
+                if line == 'ok' or line.startswith('error:'):
+                    break
+
 class Bench:
     def __init__(self, path):
         self.history=[]
@@ -38,6 +51,7 @@ class Bench:
         assert all(d[k]=='0' for k in ('FAULT','OVERLAP','LATE','RX_OVF')),d
         for axis in ('X','Z'):
             a,_,b=map(int,d[axis].split(','));assert a==b,d
+        self.command('$P4CRITICAL')
         return d
     def idle(self):
         end=time.monotonic()+20
@@ -46,5 +60,7 @@ class Bench:
             if self.receive(lambda s:s.startswith('<'),2)[-1].startswith('<Idle|'):return
             time.sleep(.05)
         raise TimeoutError('Idle')
+    def fault_diagnostics(self):
+        capture_fault(self.port)
     def close(self):
         self.port.write(b'\x18');self.port.close()

@@ -2,6 +2,7 @@
 #include "cycle.h"
 #include "follow.h"
 #include "freertos/FreeRTOS.h"
+#include "critical.h"
 #include "grbl/planner.h"
 #include "grbl/protocol.h"
 #include "grbl/state_machine.h"
@@ -28,16 +29,16 @@ static const char *const names[] = {
 
 bool h5_cycle_busy(void)
 {
-    portENTER_CRITICAL(&lock);
+    h5_critical_enter(&lock, 2000 + __LINE__);
     bool busy = published.active;
-    portEXIT_CRITICAL(&lock);
+    h5_critical_exit(&lock);
     return busy || h5_follow_busy();
 }
 bool h5_cycle_owns_stream(void)
 {
-    portENTER_CRITICAL(&lock);
+    h5_critical_enter(&lock, 2000 + __LINE__);
     bool owns = owns_stream;
-    portEXIT_CRITICAL(&lock);
+    h5_critical_exit(&lock);
     return owns || h5_follow_busy();
 }
 void h5_cycle_snapshot(h5_cycle_status_t *s)
@@ -46,9 +47,9 @@ void h5_cycle_snapshot(h5_cycle_status_t *s)
         h5_follow_snapshot(s);
         return;
     }
-    portENTER_CRITICAL(&lock);
+    h5_critical_enter(&lock, 2000 + __LINE__);
     *s = published;
-    portEXIT_CRITICAL(&lock);
+    h5_critical_exit(&lock);
 }
 bool h5_cycle_request(const h5_cycle_config_t *c)
 {
@@ -57,29 +58,29 @@ bool h5_cycle_request(const h5_cycle_config_t *c)
     if (!h5_operation_claim(H5_OWNER_PROFILE))
         return false;
     h5_follow_clear();
-    portENTER_CRITICAL(&lock);
+    h5_critical_enter(&lock, 2000 + __LINE__);
     bool ok = !published.active;
     if (ok) {
         request = *c;
-        snprintf(stop_reason, sizeof(stop_reason), "Cycle cancelled");
+        memcpy(stop_reason, "Cycle cancelled", sizeof("Cycle cancelled"));
         pending = true;
         stopping = advance_requested = false;
         published.active = true;
         published.pass = published.start = 0;
-        snprintf(published.message, sizeof(published.message), "Preparing cycle");
+        memcpy(published.message, "Preparing cycle", sizeof("Preparing cycle"));
     }
-    portEXIT_CRITICAL(&lock);
+    h5_critical_exit(&lock);
     if (!ok)
         h5_operation_release(H5_OWNER_PROFILE);
     return ok;
 }
 bool h5_cycle_advance(void)
 {
-    portENTER_CRITICAL(&lock);
+    h5_critical_enter(&lock, 2000 + __LINE__);
     bool ok = published.active;
     if (ok)
         advance_requested = true;
-    portEXIT_CRITICAL(&lock);
+    h5_critical_exit(&lock);
     return ok;
 }
 void h5_cycle_cancel(void)
@@ -88,21 +89,23 @@ void h5_cycle_cancel(void)
         h5_follow_cancel();
         return;
     }
-    portENTER_CRITICAL(&lock);
+    h5_critical_enter(&lock, 2000 + __LINE__);
     if (published.active)
         stopping = true;
-    portEXIT_CRITICAL(&lock);
+    h5_critical_exit(&lock);
 }
 static void message(const char *text, bool active)
 {
-    portENTER_CRITICAL(&lock);
+    char next[sizeof(published.message)] = {0};
+    snprintf(next, sizeof(next), "%s", text);
+    h5_critical_enter(&lock, 2000 + __LINE__);
     published.active = active;
     if (!active)
         owns_stream = false;
     published.pass = pass < plan.config.passes ? pass + 1 : plan.config.passes;
     published.start = start + 1;
-    snprintf(published.message, sizeof(published.message), "%s", text);
-    portEXIT_CRITICAL(&lock);
+    memcpy(published.message, next, sizeof(next));
+    h5_critical_exit(&lock);
     if (!active)
         h5_operation_release(H5_OWNER_PROFILE);
     char line[180];
@@ -113,11 +116,11 @@ void h5_cycle_reset(void)
 {
     h5_follow_reset();
     h5_operation_release(H5_OWNER_PROFILE);
-    portENTER_CRITICAL(&lock);
+    h5_critical_enter(&lock, 2000 + __LINE__);
     if (published.active)
-        snprintf(published.message, sizeof(published.message), "%s", stop_reason);
+        memcpy(published.message, stop_reason, sizeof(published.message));
     published.active = pending = stopping = owns_stream = false;
-    portEXIT_CRITICAL(&lock);
+    h5_critical_exit(&lock);
     waiting_ack = cancel_requested = false;
     command_id = 0;
 }
@@ -200,12 +203,12 @@ static void emit(void)
 }
 static void poll_cycle(void)
 {
-    portENTER_CRITICAL(&lock);
+    h5_critical_enter(&lock, 2000 + __LINE__);
     bool active = published.active, stop = stopping, begin = pending;
     h5_cycle_config_t config = request;
     if (begin)
         pending = false;
-    portEXIT_CRITICAL(&lock);
+    h5_critical_exit(&lock);
     if (!active)
         return;
     if (begin) {
@@ -237,9 +240,9 @@ static void poll_cycle(void)
             message(error, false);
             return;
         }
-        portENTER_CRITICAL(&lock);
+        h5_critical_enter(&lock, 2000 + __LINE__);
         owns_stream = true;
-        portEXIT_CRITICAL(&lock);
+        h5_critical_exit(&lock);
         char info[240];
         snprintf(info, sizeof(info),
                  "[H5PLAN:LEAD:%.6f|LEAD_IN:%.6f|RUN_OUT:%.6f|APPROACH:%.6f|FINISH:%.6f|CLEARANCE:%.6f|RPM_"
@@ -321,10 +324,10 @@ static void poll_cycle(void)
             if (++start == plan.starts) {
                 start = 0;
                 pass++;
-                portENTER_CRITICAL(&lock);
+                h5_critical_enter(&lock, 2000 + __LINE__);
                 bool advance = advance_requested;
                 advance_requested = false;
-                portEXIT_CRITICAL(&lock);
+                h5_critical_exit(&lock);
                 if (advance && pass + 1 < plan.config.passes)
                     pass++;
             }

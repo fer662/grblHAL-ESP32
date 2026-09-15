@@ -21,6 +21,12 @@ def phase_check(z_start,direction):
     r=dict(v.split(':',1) for v in ref[1:-1].split('|'))
     anchor_z=float(r['H5FOLLOWREF'].split(':')[1]);anchor_counts=float(r['COUNTS']);pitch=float(r['PITCH'])
     sync=b.fields('$P4SYNC','[P4SYNC:');density=float(sync['STEPS_MM']);lead=float(sync['LEAD_MM'])
+    # During reversal, low-speed following can issue a few steps before RPM
+    # crosses the powered threshold. The trace covers only the subsequent G33.
+    # Its endpoint was checked by wait_bound; derive its actual start from the
+    # independently counted Z steps, instead of assuming it starts at the bound.
+    z_steps=int(sync['AXIS_STEPS'].split(',')[1])
+    z_start=direction*2-direction*z_steps/200
     trace=b.command('$P4SYNCTRACE');errors=[]
     for s in trace:
         if not s.startswith('[P4SYNCPOINT:'):continue
@@ -65,4 +71,7 @@ try:
         stop()
         print(f'PASS FOLLOW: mode {mode}, bounds, manual pause/release, STOP'+(', spindle stop/reversal' if mode!=2 else ''),flush=True)
     b.command('$P4SIM=OFF')
+except BaseException:
+    b.fault_diagnostics()
+    raise
 finally:b.close()
