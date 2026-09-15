@@ -84,8 +84,10 @@ normal lathe power prevents a stable boot or Wi-Fi connection.
 
 ## Firmware updates
 
-Open **Firmware Update** on the touchscreen and use its IP and temporary pairing
-key with `ota_upload.py` as described in [OTA.md](OTA.md). No USB is needed.
+Open **Firmware Update** on the touchscreen and use its IP with `ota_upload.py`
+as described in [OTA.md](OTA.md). The 0.3.4 LAN build needs no pairing key; a
+`H5_OTA_REQUIRE_PAIRING=ON` build additionally requires its displayed temporary
+key. No USB is needed.
 Update mode requires idle and holds the motion owner through upload/validation.
 An update restarts the controller; live diagnostics must be reopened afterward.
 Use updates only while the machine is stopped.

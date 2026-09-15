@@ -70,6 +70,8 @@ void h5_update_snapshot(h5_update_status_t *s)
     *s = published;
     h5_critical_exit(&lock);
     s->active = h5_update_active();
+    s->pairing_required = H5_OTA_REQUIRE_PAIRING;
+    s->validation_pending = atomic_load(&validation_pending);
 }
 static void hex(char *out, const uint8_t *in, size_t count)
 {
@@ -121,20 +123,25 @@ static void transfer(int fd)
         return;
     }
     uint8_t nonce[32], header[68], expected[32], auth[68];
-    char greeting[73] = "H5OTA1 ";
-    esp_fill_random(nonce, sizeof(nonce));
-    hex(greeting + 7, nonce, 32);
-    strcat(greeting, "\n"); // 7+64+newline+NUL
-    send(fd, greeting, strlen(greeting), 0);
-    if (!receive(fd, header, sizeof(header)))
+    if (H5_OTA_REQUIRE_PAIRING) {
+        char greeting[73] = "H5OTA1 ";
+        esp_fill_random(nonce, sizeof(nonce));
+        hex(greeting + 7, nonce, 32);
+        strcat(greeting, "\n");
+        send(fd, greeting, strlen(greeting), 0);
+    } else
+        send(fd, "H5OTA0\n", 7, 0);
+    if (!receive(fd, header, H5_OTA_REQUIRE_PAIRING ? sizeof(header) : 36))
         return;
-    memcpy(auth, nonce, 32);
-    memcpy(auth + 32, header, 36);
-    mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), session_key, sizeof(session_key), auth,
-                    sizeof(auth), expected);
-    if (!equal(expected, header + 36, 32)) {
-        send(fd, "AUTH\n", 5, 0);
-        return;
+    if (H5_OTA_REQUIRE_PAIRING) {
+        memcpy(auth, nonce, 32);
+        memcpy(auth + 32, header, 36);
+        mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), session_key, sizeof(session_key), auth,
+                        sizeof(auth), expected);
+        if (!equal(expected, header + 36, 32)) {
+            send(fd, "AUTH\n", 5, 0);
+            return;
+        }
     }
     uint32_t size =
         ((uint32_t)header[0] << 24) | ((uint32_t)header[1] << 16) | ((uint32_t)header[2] << 8) | header[3];
@@ -155,7 +162,7 @@ static void transfer(int fd)
         send(fd, "DISABLED\n", 9, 0);
         return;
     }
-    message("Receiving authenticated firmware");
+    message(H5_OTA_REQUIRE_PAIRING ? "Receiving authenticated firmware" : "Receiving firmware (LAN pairing disabled)");
     esp_ota_handle_t ota = 0;
     esp_err_t result = esp_ota_begin(partition, size, &ota);
     if (result != ESP_OK) {
@@ -361,10 +368,12 @@ void h5_network_poll(void)
         }
     }
     if (atomic_load(&requested) && idle && !atomic_load(&enabled) && !atomic_load(&uploading)) {
-        uint8_t next_key[16];
-        char next_text[33];
-        esp_fill_random(next_key, sizeof(next_key));
-        hex(next_text, next_key, sizeof(next_key));
+        uint8_t next_key[16] = {0};
+        char next_text[33] = {0};
+        if (H5_OTA_REQUIRE_PAIRING) {
+            esp_fill_random(next_key, sizeof(next_key));
+            hex(next_text, next_key, sizeof(next_key));
+        }
         h5_critical_enter(&lock, 4000 + __LINE__);
         bool activate = atomic_load(&requested) && !atomic_load(&enabled) &&
                         !atomic_load(&uploading) && h5_operation_claim(H5_OWNER_UPDATE);
@@ -412,8 +421,8 @@ status_code_t h5_network_command(sys_state_t state, char *line)
         char text[250];
         snprintf(
             text, sizeof(text),
-            "[P4OTA:ACTIVE:%u|WIFI:%u|IP:%s|KEY:%s|PARTITION:%s|PENDING_VERIFY:%u|PERCENT:%u|STAGE:%s]\r\n",
-            s.active, s.connected, s.ip, s.active ? s.key : "", esp_ota_get_running_partition()->label,
+            "[P4OTA:ACTIVE:%u|WIFI:%u|IP:%s|PAIRING:%u|KEY:%s|PARTITION:%s|PENDING_VERIFY:%u|PERCENT:%u|STAGE:%s]\r\n",
+            s.active, s.connected, s.ip, s.pairing_required, s.active ? s.key : "", esp_ota_get_running_partition()->label,
             validation_pending, s.percent, s.message);
         hal.stream.write(text);
         return Status_OK;

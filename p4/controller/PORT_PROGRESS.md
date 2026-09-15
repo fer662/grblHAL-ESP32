@@ -208,8 +208,29 @@ fault shutdown and the bench gate. ELF inspection confirms the simulator and
 encoder-output self-test are absent and enable/fault routines remain in IRAM.
 Image SHA-256:
 `60586cc83c5279a049a3794962ffd20a29c1b098a65f57c0253a9f5b1df10245`.
-OTA installation is pending the tablet's temporary local pairing key. No motor
+That image was superseded before installation by 0.3.4 below. No motor
 movement or connected motion regression has been performed by the agent.
+
+## 0.3.4 selectable OTA pairing
+
+The operator requested a conditional pairing requirement for the trusted LAN.
+`H5_OTA_REQUIRE_PAIRING` is now a CMake option, default OFF for this project;
+ON retains the original temporary-key/HMAC protocol. The LAN protocol explicitly
+announces `H5OTA0` and accepts only the size/digest header. Both modes retain
+local update-mode entry, idle/ownership checks, expiry/session-generation checks,
+full image validation and boot rollback. UI/USB/HTTP status reports the selected
+policy without exposing pairing keys over HTTP. The uploader supports both
+protocols, including old firmware that always requires pairing.
+
+Six local socket tests passed: paired upload, missing-key rejection, bad-HMAC
+rejection, keyless upload, and digest-error handling in both modes. The actual
+driver enable callback's host tests still pass. The 0.3.4 main image built with
+axis controls enabled and pairing disabled, SHA-256:
+`9510b28762df9899fe72ccaa5bb84733838b0fd7d1a69975e421c73a7d8669cf`.
+The operator's photo supplied the current paired-only firmware's temporary key;
+the real tablet authenticated, verified and accepted the update, then restarted.
+The key and device logs remain outside Git. Post-boot HTTP verification awaits
+reopening Diagnostics. No remote motion command has been issued.
 
 ## Hardware acceptance still required
 

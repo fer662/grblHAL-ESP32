@@ -38,33 +38,56 @@ upgrading those dependencies.
 
 ## Routine updates
 
-Open Firmware Update on the touchscreen while the controller is stopped. It
-shows the IP address and a temporary pairing key. Save that key in a local file:
+Open Firmware Update on the touchscreen while the controller is stopped.
+Firmware 0.3.4 makes pairing a CMake build option. This LAN build defaults to
+`H5_OTA_REQUIRE_PAIRING=OFF`, and the panel says **Pairing disabled (LAN mode)**.
+Upload without a key:
+
+```sh
+python ota_upload.py build/h5_grblhal_p4.bin --host DEVICE_IP
+```
+
+To require a fresh temporary key again, build with pairing enabled:
+
+```sh
+idf.py -C p4/controller -DH5_OTA_REQUIRE_PAIRING=ON build
+```
+
+Use `-DH5_OTA_REQUIRE_PAIRING=OFF` to disable it. The setting takes effect in the
+newly installed image; the firmware currently running determines how that
+installation itself authenticates. For a paired receiver, save the key displayed
+on its touchscreen to a private local file:
 
 ```sh
 python ota_upload.py build/h5_grblhal_p4.bin --host DEVICE_IP --key-file PRIVATE_KEY_FILE
 ```
 
-While USB is attached, the helper can obtain the pairing information locally:
+The uploader supports both modes and the original paired-only firmware. With
+USB attached it can still enter update mode and obtain pairing information:
 
 ```sh
 python ota_upload.py build/h5_grblhal_p4.bin --usb USB_PORT
 ```
 
-The device accepts a connection on TCP port 3232 only in update mode. A fresh
-challenge and HMAC-SHA256 authenticate the image size and SHA256 digest before
-flash erase. The complete received image must match that digest and pass IDF
-image validation before changing the boot slot. This authenticates the firmware;
-it does not encrypt the public firmware payload or provide secure boot against
-physical flash access. Pairing keys expire when update mode closes or after five
-minutes without an active upload. USB is a trusted local provisioning interface.
+TCP port 3232 accepts uploads only in the locally opened update session. Pairing
+ON uses the existing `H5OTA1 <nonce>` greeting and a 68-byte header: big-endian
+image size, SHA256 digest, then HMAC-SHA256 of nonce/size/digest. Authentication
+happens before flash erase. Pairing OFF uses `H5OTA0` and a 36-byte size/digest
+header, with no key or MAC: any reachable LAN client may upload during the
+session. The uploader does not send an image to a paired receiver without a key.
+
+Both modes require the complete image to match its SHA256 digest and pass project
+and IDF image validation before selecting the boot slot. The digest detects
+corruption; in LAN mode it does not authenticate the sender. Session expiry,
+close/generation checks, motion ownership, boot confirmation and rollback remain
+unchanged. Pairing keys, when enabled, expire on close or after five idle minutes.
 
 Motion commands and new operations are refused during updates. Entry waits for
 an empty planner and completed STEP pulse. UI settings and grbl NVS writes also
 wait for idle; they do not share an active motion/OTA flash-writing window.
 Interrupted uploads leave the current boot slot selected. Failed validation
-leaves it selected too. Closing the panel during an authenticated upload does
-not interrupt the upload or release its motion lock. Authentication captures the
+leaves it selected too. Closing the panel during an accepted upload does
+not interrupt the upload or release its motion lock. The handshake captures the
 update session; accepting it and retaining motion ownership are serialized with
 panel close and expiry. A handshake from a closed session cannot start erase.
 

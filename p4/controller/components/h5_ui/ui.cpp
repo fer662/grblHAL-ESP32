@@ -262,8 +262,12 @@ void h5_ui_sync()
         last_jog_time = millis();
     }
     if(update_label) {
-        h5_update_status_t update;h5_update_snapshot(&update);char text[400];
-        snprintf(text,sizeof(text),"Firmware update\n\n%s\nIP: %s | Progress: %u%%\nPairing key: %s\n\nUse ota_upload.py with the application .bin file.\nClosing this window leaves an active upload running.",update.message,update.connected?update.ip:"Wi-Fi not connected",update.percent,update.active?update.key:"Open update mode to pair");
+        h5_update_status_t update;h5_update_snapshot(&update);char text[400], pairing[80];
+        if (update.pairing_required)
+            snprintf(pairing,sizeof(pairing),"Pairing key: %s",update.active?update.key:"Open update mode to pair");
+        else
+            snprintf(pairing,sizeof(pairing),"Pairing disabled (LAN mode)");
+        snprintf(text,sizeof(text),"Firmware update\n\n%s\nIP: %s | Progress: %u%%\n%s\n\nUse ota_upload.py with the application .bin file.\nClosing this window leaves an active upload running.",update.message,update.connected?update.ip:"Wi-Fi not connected",update.percent,pairing);
         lv_label_set_text(update_label,text);
     }
     if (diagnostics_label && !lv_obj_has_flag(diagnostics_panel, LV_OBJ_FLAG_HIDDEN)) {

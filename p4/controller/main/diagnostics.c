@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "diagnostics_internal.h"
 #include "bridge.h"
+#include "update.h"
 #include "critical.h"
 #include "esp_app_desc.h"
 #include "esp_ota_ops.h"
@@ -98,10 +99,12 @@ void h5_diagnostics_serve(int fd)
     }
     h5_diagnostics_t s; h5_diagnostics_snapshot(&s);
     h5_status_t state; h5_bridge_snapshot(&state);
+    h5_update_status_t update; h5_update_snapshot(&update);
     char body[2300];
     snprintf(body, sizeof(body),
         "{\n  \"version\":\"%s\",\"partition\":\"%s\",\"uptime_ms\":%lu,\"sample_age_ms\":%lu,"
         "\"ready\":%u,\"state\":\"%s\",\"alarm\":%d,\n"
+        "  \"ota_pairing_required\":%s,\"ota_validation_pending\":%s,\n"
         "  \"motor_enables_locked\":%s,\"enable_pins\":[%u,%u],\"position_steps_xz\":[%ld,%ld],\n"
         "  \"encoder_counts\":%lld,\"encoder_cpr\":1200,\"rpm\":%.3f,\"simulated\":%u,"
         "\"tracking\":%u,\"waiting_index\":%u,\"sync_fault\":\"%s\",\n"
@@ -115,6 +118,7 @@ void h5_diagnostics_serve(int fd)
         "\"current_ma\":1700,\"microsteps\":2,\"rsense_mohm\":75}\n}\n",
         esp_app_get_description()->version, esp_ota_get_running_partition()->label,
         (unsigned long)now_ms(), (unsigned long)(now_ms() - s.sampled_ms), state.ready, state.state, state.alarm,
+        update.pairing_required?"true":"false", update.validation_pending?"true":"false",
         h5_motor_controls_enabled()?"false":"true", s.enable_x, s.enable_z, (long)state.position[0], (long)state.position[2],
         (long long)s.encoder, (double)s.rpm, s.simulated, s.tracking, s.waiting, s.sync_fault,
         (unsigned long)s.x_pulses, (unsigned long)s.z_pulses, (long)s.x_counted, (long)s.z_counted,

@@ -37,7 +37,7 @@ try:
     assert first['motor_enables_locked'] and first['enable_pins'] == [1, 0], first
     assert first['sample_age_ms'] < 1000 and first['ready'], first
     assert first['tmc']['sampled_ms'] > 0, first
-    assert all(key not in json.dumps(first).lower() for key in ('password', 'pairing', 'ssid')), first
+    assert all(key not in json.dumps(first).lower() for key in ('password', 'pairing_key', 'ssid')), first
     assert first['simulated'] == 0, first
 
     def request(raw, status):

@@ -10,6 +10,10 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
 ## Current scope
 
+**0.3.4 adds `H5_OTA_REQUIRE_PAIRING` (default OFF for this LAN).** Set it ON at
+build time to restore temporary-key authentication. Update mode, digest/image
+validation and rollback are retained in either mode; see [OTA.md](OTA.md).
+
 **0.3.3 enables the existing X/Z axis controls in the normal application.**
 There is no separate arming or motor-test UI. The operator selected a first
 Z-only movement test with the carriage disengaged from the leadscrew, ahead of
@@ -225,7 +229,7 @@ idf.py -C p4/controller -DH5_BENCH_ONLY=OFF build
 Disconnected bench fixture only (enables locked, synthetic encoder available):
 
 ```sh
-idf.py -C p4/controller -B build-bench -DH5_BENCH_ONLY=ON build
+idf.py -C p4/controller -B build-bench -DH5_BENCH_ONLY=ON -DH5_OTA_REQUIRE_PAIRING=ON build
 ```
 
 Check the selected build and device `$I` identity before any pulse-producing
