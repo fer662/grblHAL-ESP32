@@ -1,9 +1,10 @@
 # H5 grblHAL ESP32-P4 port
 
 This is a separate ESP-IDF application using a pinned `main/grbl` core submodule.
-The core fork contains one isolated spindle-segment timing fix, described in
-[spindle validation](SPINDLE_VALIDATION.md). The original ESP32/S3 driver source
-remains untouched; its build has not been revalidated against the core fix.
+The core fork contains an isolated spindle-segment timing fix plus opt-in
+RPM feed-forward and acceleration phase compensation, described in
+[spindle tracking](SPINDLE_TRACKING.md). The original ESP32/S3 driver source
+remains untouched; its build has not been revalidated against these core changes.
 The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
 ## Current scope
@@ -49,8 +50,8 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
   Core diagnostics remain available through the commands below.
 
 **Not ready to run the lathe yet:** synchronization has synthetic bench coverage,
-but speed-change tuning, phase/lead-in compensation and threading recipes are
-unfinished. TMC5160 SPI initialization, assisted cutting recipes, sound,
+including smooth RPM ramps and acceleration phase compensation. Threading
+recipes and their physical lead-in/run-out geometry are unfinished. TMC5160 SPI initialization, assisted cutting recipes, sound,
 persistent settings, Wi-Fi and dual-slot OTA/rollback are not enabled.
 All eight H5 operations remain migration requirements; none is being removed.
 The disabled enables are intentional even though STEP/DIR are real outputs.
@@ -172,16 +173,21 @@ checks, not a long-duration or machine-load stability certification.
 
 The spindle-enabled build subsequently passed the motion suite again, the
 11-cut spindle suite, and independent stall, reversal and missed-deadline fault
-tests. Detailed measurements and unresolved tuning/lead-in issues are recorded
-in [SPINDLE_VALIDATION.md](SPINDLE_VALIDATION.md). Motor enables remain locked.
+tests. That historical stage is recorded in
+[SPINDLE_VALIDATION.md](SPINDLE_VALIDATION.md). The current installed build also
+passed 13 ramp/phase cases, the motion suite, the nine-cut steady spindle suite,
+all three fault tests and USB/UI regressions. Peak encoder-equivalent phase
+error was 0.0075 mm in the evaluated cutting windows; all 104,000 Z pulses in
+the tracking suite matched PCNT counts. See [SPINDLE_TRACKING.md](SPINDLE_TRACKING.md)
+for the acceleration measurements, assumptions and remaining limits. Motor
+enables remain locked.
 
 ## Remaining port sequence
 
-1. Finish synchronization acceptance: tune speed-change response across pitches,
-   account for acceleration/phase lead-in, constrain correction acceleration,
-   validate X/tapered synchronization, and measure the real geared encoder.
-   Synthetic Z phase tracking and explicit P4 FPU context handling now work;
-   see [measurements and remaining limits](SPINDLE_VALIDATION.md).
+1. Extend the validated straight-Z synchronization to X/tapered paths and
+   measure the real geared encoder. Smooth-ramp tracking, compensated phase,
+   correction acceleration limits and P4 FPU context checks now pass the bench
+   suite; see [measurements and remaining limits](SPINDLE_TRACKING.md).
 2. Implement all eight assisted-operation semantics in an application cycle
    service over grbl motion, preserving signed pitch, starts, pass progression,
    cone/ellipse geometry, machining stops and deliberate clearance moves.
@@ -200,10 +206,14 @@ version, settings version, core source inventory and ISR dependencies on every
 core upgrade. Do not advance the core automatically from a moving branch.
 
 The core submodule now points to `https://github.com/fer662/grblHAL-core`, branch
-`codex/spindle-segment-time`, commit `44aad88e60ccebd47729252e401ff98245c5bf39`.
-Its parent is upstream `516e5ad80757bd2eba86bff18feb613ca121dc16`. Keep the
-single timing correction as a separate commit when merging/rebasing upstream.
-If upstream incorporates the fix, drop the local commit after rerunning the
-spindle regression. Configuration and H5 application code stay outside the core.
+`codex/spindle-tracking`, commit `17c13030ab8a7317943bf54ae1a55d3c57f139bd`.
+It has two local commits over upstream `516e5ad80757bd2eba86bff18feb613ca121dc16`:
+the fractional-time correction `44aad88` and the opt-in tracking extension
+`17c1303`. The original `codex/spindle-segment-time` branch still contains only
+the first fix. Preserve that separation when merging/rebasing upstream; drop
+local changes only after equivalent upstream behavior passes the regressions.
+The optional tracking extension currently assumes straight Z synchronization;
+review its acceleration constraint before enabling other synchronized paths.
+Configuration and H5 application code stay outside the core.
 
 ESP-IDF reference: [P4 GPTimer API](https://docs.espressif.com/projects/esp-idf/en/v5.5.2/esp32p4/api-reference/peripherals/gptimer.html).

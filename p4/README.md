@@ -2,7 +2,8 @@
 
 This fork tracks `grblHAL/ESP32`. See [the controller](controller/README.md) for
 the current P4 motion/touchscreen application. The core is pinned to our
-`fer662/grblHAL-core` fork with one isolated spindle-segment timing fix.
+`fer662/grblHAL-core` fork with an isolated spindle-segment timing fix and
+opt-in RPM feed-forward/acceleration phase compensation.
 H5 touchscreen/application integration remains outside the motion core.
 
 ## USB probe

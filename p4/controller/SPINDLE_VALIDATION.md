@@ -1,5 +1,10 @@
 # Spindle synchronization bench record
 
+This is the historical first spindle-validation stage. Current ramp tracking,
+phase compensation, acceleration constraints and results are documented in
+[SPINDLE_TRACKING.md](SPINDLE_TRACKING.md); the open tuning items below describe
+the earlier firmware.
+
 ## Architecture and scope
 
 The P4 runs native grblHAL `G33` through the existing planner and step ISR.

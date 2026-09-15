@@ -13,6 +13,7 @@ import serial
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('port')
 parser.add_argument('--fault', choices=['stall', 'reverse', 'deadline'])
+parser.add_argument('--abrupt', action='store_true', help='Diagnostic speed jumps outside the assumed spindle-slew envelope')
 args = parser.parse_args()
 port = serial.Serial()
 port.port, port.baudrate, port.timeout = args.port, 115200, .05
@@ -115,7 +116,7 @@ try:
     assert any('H5_P4_BENCH_MOTOR_ENABLES_LOCKED' in x for x in command('$I'))
     diagnostics()
     assert any('P4FPUTEST:PASS' in x for x in command('$P4FPUTEST'))
-    command('$90=1')
+    command('$90=0.25')
     command('$91=0')
     command('G21 G18 G8 G90 G94')
     if args.fault:
@@ -155,8 +156,9 @@ try:
         cut(pitch=2)
         cut(direction=-1)
         cut(speed=-300)
-        cut(change=240)
-        cut(change=360)
+        if args.abrupt:
+            cut(change=240)
+            cut(change=360)
         command('$P4SIM=OFF')
         assert any('P4ENCODERTEST:PASS' in x for x in command('$P4ENCODERTEST'))
         assert any('P4FPUTEST:PASS' in x for x in command('$P4FPUTEST'))
