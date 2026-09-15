@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
+#include "esp_attr.h"
 #include "driver/pulse_cnt.h"
 #include "driver/gpio.h"
 #include "esp_rom_sys.h"
@@ -85,4 +86,11 @@ bool h5_feedback_selftest(void)
     ESP_ERROR_CHECK(gpio_set_direction(H5_ENCODER_A, GPIO_MODE_INPUT));
     ESP_ERROR_CHECK(gpio_set_direction(H5_ENCODER_B, GPIO_MODE_INPUT));
     return forward - start == 32000 && reverse - start == -32000 && final == start;
+}
+
+int32_t IRAM_ATTR h5_encoder_count(void)
+{
+    int count = 0;
+    if (spindle_counter) pcnt_unit_get_count(spindle_counter, &count);
+    return count;
 }

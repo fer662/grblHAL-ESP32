@@ -12,6 +12,7 @@
 #include "esp_ldo_regulator.h"
 #include "esp_timer.h"
 #include "esp_system.h"
+#include "esp_rom_sys.h"
 #include "hal/gpio_ll.h"
 #include "grbl/hal.h"
 #include "grbl/protocol.h"
@@ -20,6 +21,8 @@
 #include "serial.h"
 #include "feedback.h"
 #include "bridge.h"
+#include "fpu_isr.h"
+#include "spindle.h"
 
 #if !H5_BENCH_ONLY
 #error "Machine output enable requires the remaining hardware acceptance gates."
@@ -44,6 +47,8 @@ static volatile struct {
     int32_t x_position, z_position;
 } diag = {.min_period = UINT32_MAX, .pulse_min = UINT32_MAX};
 static uint64_t pulse_started;
+static uint64_t previous_alarm_time;
+static uint32_t expected_alarm_interval;
 typedef struct {
     uint64_t previous;
     uint32_t count, minimum, first[16], last[16];
@@ -90,6 +95,7 @@ static void IRAM_ATTR reset_direction(void)
 }
 static void IRAM_ATTR idle(bool clear)
 {
+    h5_spindle_idle();
     irq_disable();
     if (running) {
         running = false;
@@ -138,6 +144,7 @@ static void IRAM_ATTR assert_pulse(void)
         diag.z_pulses++;
         diag.z_position += (gpio_ll_get_level(&GPIO, H5_Z_DIR) ^ direction_invert.z) ? -1 : 1;
     }
+    h5_spindle_edge(pending_steps.z);
     pulse_phase = 2;
     schedule_pulse(pulse_ticks);
 }
@@ -165,6 +172,7 @@ static bool IRAM_ATTR pulse_alarm(gptimer_handle_t timer, const gptimer_alarm_ev
 static void IRAM_ATTR pulse_start(stepper_t *stepper)
 {
     if (fault) return;
+    h5_spindle_block(stepper);
     if (stepper->step_out.y) { h5_motion_fault(); return; }
     if (pulse_phase && (stepper->step_out.mask || stepper->dir_changed.mask)) {
         diag.overlaps++;
@@ -209,13 +217,21 @@ static bool IRAM_ATTR step_alarm(gptimer_handle_t timer, const gptimer_alarm_eve
 {
     if (!running || fault) return false;
     uint64_t start = esp_timer_get_time();
-    if (event->count_value > tick_period / 2) {
+    uint64_t now;
+    gptimer_get_raw_count(pulse_timer, &now);
+    // The auto-reloading step counter alone cannot reveal an entire missed
+    // period. A separate free-running clock detects that loss of timer service.
+    bool missed = expected_alarm_interval && now - previous_alarm_time >
+        expected_alarm_interval + expected_alarm_interval / 2;
+    previous_alarm_time = now;
+    if (missed || event->count_value > tick_period / 2) {
         diag.late++;
         h5_motion_fault();
         return false;
     }
     diag.interrupts++;
-    hal.stepper.interrupt_callback();
+    h5_fpu_call(hal.stepper.interrupt_callback);
+    expected_alarm_interval = tick_period;
     uint32_t duration = esp_timer_get_time() - start;
     if (duration > diag.max_isr_us) diag.max_isr_us = duration;
     return false;
@@ -226,6 +242,8 @@ static void wake(void)
     enable((axes_signals_t){AXES_BITMASK}, false);
     ESP_ERROR_CHECK(gptimer_set_raw_count(step_timer, 0));
     cycles(10000); // 1 ms driver settle before first planner tick
+    gptimer_get_raw_count(pulse_timer, &previous_alarm_time);
+    expected_alarm_interval = tick_period;
     running = true;
     ESP_ERROR_CHECK(gptimer_start(step_timer));
 }
@@ -255,12 +273,13 @@ static void realtime(sys_state_t state)
 {
     previous_realtime(state);
     h5_serial_poll();
+    h5_spindle_poll();
     h5_bridge_poll();
     // Let the idle task and UART worker run while the core waits for input.
     // Pulse timing belongs solely to the hardware timers, never this delay.
     static uint32_t yielded;
     uint32_t now = ticks_ms();
-    if (now != yielded) { yielded = now; vTaskDelay(1); }
+    if (now != yielded && !h5_spindle_near_index()) { yielded = now; vTaskDelay(1); }
 }
 static void settings_changed(settings_t *s, settings_changed_flags_t changed)
 {
@@ -273,6 +292,23 @@ static void settings_changed(settings_t *s, settings_changed_flags_t changed)
 }
 static status_code_t command(sys_state_t state, char *line)
 {
+    status_code_t spindle_result = h5_spindle_command(state, line);
+    if (spindle_result != Status_Unhandled) return spindle_result;
+    if (strcmp(line, "P4FPUTEST") == 0) {
+        if (state != STATE_IDLE || running || pulse_phase) return Status_IdleError;
+        bool ok = h5_fpu_test();
+        hal.stream.write(ok ? "[P4FPUTEST:PASS|REGISTERS:32|FCSR:PRESERVED|IRQS:1000]\r\n" : "[P4FPUTEST:FAIL]\r\n");
+        return ok ? Status_OK : Status_SelfTestFailed;
+    }
+    if (strcmp(line, "P4IRQTEST") == 0) {
+        if (state != STATE_CYCLE || !running) return Status_IdleError;
+        // Deliberate timing violation, only in this enable-locked bench image.
+        // The independent deadline check must fault after interrupts resume.
+        irq_disable();
+        esp_rom_delay_us(2000);
+        irq_enable();
+        return Status_OK;
+    }
     if (strcmp(line, "P4UI") == 0) {
         h5_status_t snapshot;
         h5_bridge_snapshot(&snapshot);
@@ -293,7 +329,7 @@ static status_code_t command(sys_state_t state, char *line)
         return h5_ui_screenshot(hal.stream.write) ? Status_OK : Status_SelfTestFailed;
     }
     if (strcmp(line, "P4ENCODERTEST") == 0) {
-        if (state != STATE_IDLE || running || pulse_phase) return Status_IdleError;
+        if (state != STATE_IDLE || running || pulse_phase || h5_spindle_simulator_active()) return Status_IdleError;
         bool ok = h5_feedback_selftest();
         hal.stream.write(ok ? "[P4ENCODERTEST:PASS|COUNTS:32000,-32000,0]\r\n" : "[P4ENCODERTEST:FAIL]\r\n");
         return ok ? Status_OK : Status_SelfTestFailed;
@@ -333,7 +369,7 @@ static status_code_t command(sys_state_t state, char *line)
     int32_t xpos = diag.x_position, zpos = diag.z_position;
     irq_enable();
     char text[480];
-    snprintf(text, sizeof(text), "[P4:BENCH|EN:LOCKED|NVS:RAM|SYNC:OFF|X:%lu,%ld,%d|Z:%lu,%ld,%d|ENC:%d|ISR:%lu|OVERLAP:%lu|LATE:%lu|PERIOD:%lu,%lu|PULSE:%lu,%lu|ISR_US:%lu|RX_OVF:%u|FAULT:%u|ENABLE_PINS:%u,%u]\r\n",
+    snprintf(text, sizeof(text), "[P4:BENCH|EN:LOCKED|NVS:RAM|SYNC:BENCH|X:%lu,%ld,%d|Z:%lu,%ld,%d|ENC:%d|ISR:%lu|OVERLAP:%lu|LATE:%lu|PERIOD:%lu,%lu|PULSE:%lu,%lu|ISR_US:%lu|RX_OVF:%u|FAULT:%u|ENABLE_PINS:%u,%u]\r\n",
         (unsigned long)xp, (long)xpos, x, (unsigned long)zp, (long)zpos, z, encoder,
         (unsigned long)n, (unsigned long)overlap, (unsigned long)late, (unsigned long)min, (unsigned long)max,
         (unsigned long)pmin, (unsigned long)pmax, (unsigned long)cost, h5_serial_overflows(), fault, gpio_get_level(H5_X_ENABLE), gpio_get_level(H5_Z_ENABLE));
@@ -350,6 +386,13 @@ static status_code_t validate(modal_groups_t *commands, parser_state_t *state, p
     if ((block->modal.motion == MotionMode_CwArc || block->modal.motion == MotionMode_CcwArc)
         && block->modal.plane_select != PlaneSelect_ZX) {
         hal.stream.write("[MSG:P4 arcs require G18]\r\n");
+        return Status_GcodeUnsupportedCommand;
+    }
+    // Upstream synchronization currently derives its correction speed limit
+    // from Z. Do not expose X/tapered threading or unvalidated G76 cycles yet.
+    if (block->modal.motion == MotionMode_Threading ||
+        (block->modal.motion == MotionMode_SpindleSynchronized && (block->words.x || block->words.u))) {
+        hal.stream.write("[MSG:P4 bench synchronization currently supports straight Z G33 only]\r\n");
         return Status_GcodeUnsupportedCommand;
     }
     return Status_Unhandled;
@@ -369,6 +412,7 @@ static bool setup(settings_t *s)
     gpio_set_level(H5_Z_DIR, direction_invert.z);
     ESP_ERROR_CHECK(gpio_config(&outputs));
     h5_feedback_init();
+    h5_spindle_ready();
     gptimer_config_t timer = {.clk_src = GPTIMER_CLK_SRC_DEFAULT, .direction = GPTIMER_COUNT_UP,
         .resolution_hz = H5_STEP_HZ, .intr_priority = 3};
     ESP_ERROR_CHECK(gptimer_new_timer(&timer, &step_timer));
@@ -379,6 +423,8 @@ static bool setup(settings_t *s)
     ESP_ERROR_CHECK(gptimer_enable(step_timer));
     ESP_ERROR_CHECK(gptimer_enable(pulse_timer));
     ESP_ERROR_CHECK(gptimer_start(pulse_timer));
+    // Fail closed if this SDK/toolchain does not preserve interrupted FP state.
+    if (!h5_fpu_test()) { h5_motion_fault(); return false; }
     return s->version.id == SETTINGS_VERSION;
 }
 bool driver_init(void)
@@ -420,6 +466,7 @@ bool driver_init(void)
     previous_command = grbl.on_unknown_sys_command;
     grbl.on_unknown_sys_command = command;
     grbl.on_pre_gcode_execute = validate;
+    h5_spindle_init();
     h5_bridge_init();
     return h5_serial_init() && hal.version == 10;
 }

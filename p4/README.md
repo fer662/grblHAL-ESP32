@@ -1,8 +1,9 @@
 # ESP32-P4 bring-up
 
-This fork tracks `grblHAL/ESP32`. The upstream core remains pinned at the
-driver's original `main/grbl` submodule revision. H5 touchscreen/application
-integration will remain outside the motion core.
+This fork tracks `grblHAL/ESP32`. See [the controller](controller/README.md) for
+the current P4 motion/touchscreen application. The core is pinned to our
+`fer662/grblHAL-core` fork with one isolated spindle-segment timing fix.
+H5 touchscreen/application integration remains outside the motion core.
 
 ## USB probe
 

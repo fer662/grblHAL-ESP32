@@ -1,8 +1,10 @@
 # H5 grblHAL ESP32-P4 port
 
-This is a separate ESP-IDF application using the fork's **unchanged upstream
-`main/grbl` core submodule**. The original ESP32/S3 driver and its build remain
-untouched. The P4 HAL uses current ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
+This is a separate ESP-IDF application using a pinned `main/grbl` core submodule.
+The core fork contains one isolated spindle-segment timing fix, described in
+[spindle validation](SPINDLE_VALIDATION.md). The original ESP32/S3 driver source
+remains untouched; its build has not been revalidated against the core fix.
+The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
 ## Current scope
 
@@ -21,6 +23,11 @@ untouched. The P4 HAL uses current ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 - A third PCNT unit reads spindle A/B using the existing x2 decoding. Accumulator
   watchpoints replace task-level read/clear. Effective calibration stays at
   1200 counts/revolution. No physical index signal is assumed.
+- Bench-only straight Z `G33` synchronization, encoder-derived revolution phase,
+  repeated/multi-start phase diagnostics, and spindle stall/reversal fault stops.
+  A P4 assembly boundary preserves the interrupted task's floating-point state;
+  a 1,000-interrupt canary runs at boot and is available as `$P4FPUTEST`.
+  G76 and X/tapered synchronized moves remain rejected pending validation.
 - UART0 via the tablet's USB bridge. A single grbl task owns command input;
   realtime commands are handled while the planner is busy. UART and software
   buffer errors cancel the command stream rather than executing truncated input.
@@ -41,9 +48,10 @@ untouched. The P4 HAL uses current ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 - SDK application logs are suppressed on UART0 to protect protocol responses.
   Core diagnostics remain available through the commands below.
 
-**Not ready to run the lathe yet:** spindle synchronization/threading, TMC5160 SPI
-initialization, assisted cutting recipes, sound, persistent settings, Wi-Fi and
-dual-slot OTA/rollback are not enabled. The app does not claim those HAL capabilities.
+**Not ready to run the lathe yet:** synchronization has synthetic bench coverage,
+but speed-change tuning, phase/lead-in compensation and threading recipes are
+unfinished. TMC5160 SPI initialization, assisted cutting recipes, sound,
+persistent settings, Wi-Fi and dual-slot OTA/rollback are not enabled.
 All eight H5 operations remain migration requirements; none is being removed.
 The disabled enables are intentional even though STEP/DIR are real outputs.
 
@@ -162,14 +170,18 @@ Run `python verify_connection.py PORT --seconds 60` for reopen/snapshot checks
 followed by a 60-second continuous-connection test. These are bounded bench
 checks, not a long-duration or machine-load stability certification.
 
+The spindle-enabled build subsequently passed the motion suite again, the
+11-cut spindle suite, and independent stall, reversal and missed-deadline fault
+tests. Detailed measurements and unresolved tuning/lead-in issues are recorded
+in [SPINDLE_VALIDATION.md](SPINDLE_VALIDATION.md). Motor enables remain locked.
+
 ## Remaining port sequence
 
-1. Validate the spindle tracking/HAL interface, including geared A/B phase,
-   repeated-pass and multi-start registration, spindle reversal/stall behavior,
-   and synchronization while the display is busy. The P4 IDF port disallows FPU
-   use from interrupts (`FreeRTOS-Kernel/portable/riscv/portasm.S`); upstream
-   `st_spindle_sync_out` uses floating point. Do not simply enable it without
-   resolving and testing interrupt context handling.
+1. Finish synchronization acceptance: tune speed-change response across pitches,
+   account for acceleration/phase lead-in, constrain correction acceleration,
+   validate X/tapered synchronization, and measure the real geared encoder.
+   Synthetic Z phase tracking and explicit P4 FPU context handling now work;
+   see [measurements and remaining limits](SPINDLE_VALIDATION.md).
 2. Implement all eight assisted-operation semantics in an application cycle
    service over grbl motion, preserving signed pitch, starts, pass progression,
    cone/ellipse geometry, machining stops and deliberate clearance moves.
@@ -186,5 +198,12 @@ on `codex/p4-motion-driver`. Merge upstream driver changes, inspect any updated
 core submodule revision, then rerun this build and device suite. Review HAL
 version, settings version, core source inventory and ISR dependencies on every
 core upgrade. Do not advance the core automatically from a moving branch.
+
+The core submodule now points to `https://github.com/fer662/grblHAL-core`, branch
+`codex/spindle-segment-time`, commit `44aad88e60ccebd47729252e401ff98245c5bf39`.
+Its parent is upstream `516e5ad80757bd2eba86bff18feb613ca121dc16`. Keep the
+single timing correction as a separate commit when merging/rebasing upstream.
+If upstream incorporates the fix, drop the local commit after rerunning the
+spindle regression. Configuration and H5 application code stay outside the core.
 
 ESP-IDF reference: [P4 GPTimer API](https://docs.espressif.com/projects/esp-idf/en/v5.5.2/esp32p4/api-reference/peripherals/gptimer.html).

@@ -69,7 +69,7 @@ def wait_state(state, timeout=8):
 def diagnostics():
     lines = command('$P4')
     line = next(s for s in lines if s.startswith('[P4:'))
-    assert '|EN:LOCKED|NVS:RAM|SYNC:OFF|' in line, line
+    assert '|EN:LOCKED|NVS:RAM|SYNC:BENCH|' in line, line
     fields = dict(part.split(':', 1) for part in line.strip('[]').split('|'))
     assert fields['ENABLE_PINS'] == '1,0', fields
     for key in ('FAULT', 'OVERLAP', 'LATE', 'RX_OVF'):
@@ -146,8 +146,8 @@ try:
     print('PASS: X pulse intervals show acceleration, cruise, and deceleration.', flush=True)
 
     command('G1 Y1 F60', error=20)
-    command('G33 Z1 K1', error=20)
-    print('PASS: absent Y and unsupported spindle-sync commands rejected.', flush=True)
+    command('G33 Z1 K1', error=41)
+    print('PASS: absent Y and synchronized motion without a turning spindle rejected.', flush=True)
 
     command('G1 Z20 F960')
     time.sleep(.2)

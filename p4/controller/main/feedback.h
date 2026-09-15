@@ -6,3 +6,5 @@ void h5_feedback_init(void);
 void h5_feedback_read(int *x_pulses, int *z_pulses, int *encoder);
 // Bench only, idle only: drives A/B internally; never call with encoder attached.
 bool h5_feedback_selftest(void);
+
+int32_t h5_encoder_count(void);

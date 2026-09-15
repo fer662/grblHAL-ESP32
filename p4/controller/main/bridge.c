@@ -7,7 +7,7 @@
 #include "grbl/protocol.h"
 #include "grbl/state_machine.h"
 #include "bridge.h"
-#include "feedback.h"
+#include "spindle.h"
 
 // The core remains the sole parser/planner owner. UI messages enter its normal
 // stream at complete-line boundaries; callbacks never execute G-code reentrantly.
@@ -121,19 +121,10 @@ void h5_bridge_poll(void)
     if (rt & 1) protocol_enqueue_realtime_command(0x85);
     if (rt & 2) protocol_enqueue_realtime_command('!');
     if (rt & 4) protocol_enqueue_realtime_command('~');
-    static uint32_t last_publish, last_rpm_time;
-    static int last_encoder;
-    static float rpm;
+    static uint32_t last_publish;
     uint32_t now = hal.get_elapsed_ticks();
     if (now - last_publish < 20 || !sys.driver_started) return;
     last_publish = now;
-    int x, z, encoder;
-    h5_feedback_read(&x, &z, &encoder);
-    if (now - last_rpm_time >= 200) {
-        rpm = (float)(encoder - last_encoder) * 60000.0f / (1200.0f * (now - last_rpm_time));
-        last_encoder = encoder;
-        last_rpm_time = now;
-    }
     h5_status_t s = {0};
     hal.irq_disable();
     for (unsigned i = 0; i < 3; i++) s.position[i] = sys.position[i];
@@ -144,7 +135,7 @@ void h5_bridge_poll(void)
     s.moving = state == STATE_CYCLE || state == STATE_JOG || state == STATE_HOMING;
     s.held = state == STATE_HOLD;
     s.alarm = sys.alarm;
-    s.rpm = rpm;
+    s.rpm = h5_spindle_rpm();
     const char *name = state == STATE_IDLE ? "Ready" : state == STATE_JOG ? "Jogging" : state == STATE_CYCLE ? "Running" : state == STATE_HOLD ? "Held" : state == STATE_ALARM ? "Alarm" : "Stopped";
     snprintf(s.state, sizeof(s.state), "%s", name);
     portENTER_CRITICAL(&lock);
