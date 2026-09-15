@@ -44,14 +44,19 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
   Stream reset also discards pending UI requests and clears held gestures.
 - X/Z readouts, zero, numeric/continuous/fine jog, machining stops, units,
   original pitch picker, eight operation tabs and cycle parameter controls.
-  Async Z feed uses grbl's accelerated jog path. Other START buttons explicitly
-  report that spindle-synchronized operations are pending.
+  Async Z feed uses grbl's accelerated jog path. Turn and Thread now use a
+  serialized assisted-cycle service with a touchscreen geometry preview, radial
+  depth passes, multiple starts, clearance returns and controlled cancellation.
+  The other operation START buttons remain pending; see
+  [assisted cycles](ASSISTED_CYCLES.md).
 - SDK application logs are suppressed on UART0 to protect protocol responses.
   Core diagnostics remain available through the commands below.
 
 **Not ready to run the lathe yet:** synchronization has synthetic bench coverage,
-including smooth RPM ramps and acceleration phase compensation. Threading
-recipes and their physical lead-in/run-out geometry are unfinished. TMC5160 SPI initialization, assisted cutting recipes, sound,
+including smooth RPM ramps and acceleration phase compensation. Turn/Thread
+recipes now include lead-in and run-out, but their physical clearance and
+loaded-machine behavior remain unverified. TMC5160 SPI initialization, the
+remaining assisted recipes, sound,
 persistent settings, Wi-Fi and dual-slot OTA/rollback are not enabled.
 All eight H5 operations remain migration requirements; none is being removed.
 The disabled enables are intentional even though STEP/DIR are real outputs.
@@ -188,9 +193,10 @@ enables remain locked.
    measure the real geared encoder. Smooth-ramp tracking, compensated phase,
    correction acceleration limits and P4 FPU context checks now pass the bench
    suite; see [measurements and remaining limits](SPINDLE_TRACKING.md).
-2. Implement all eight assisted-operation semantics in an application cycle
-   service over grbl motion, preserving signed pitch, starts, pass progression,
-   cone/ellipse geometry, machining stops and deliberate clearance moves.
+2. Extend the new [assisted-cycle service](ASSISTED_CYCLES.md) beyond Turn and
+   Thread to the remaining operations. Preserve Gearbox engagement/manual
+   override, X cutting, cone/ellipse geometry, pass advance, machining stops and
+   deliberate clearance moves. Complete Async manual override/resume as well.
 3. Add verified TMC5160 SPI configuration, settings/preferences storage and sound.
 4. Add hosted Wi-Fi and dual-slot OTA with rollback; prepare and test a backup-
    preserving partition migration. Flash writes must require motion stopped.

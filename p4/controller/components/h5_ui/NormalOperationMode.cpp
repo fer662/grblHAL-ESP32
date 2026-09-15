@@ -1221,6 +1221,8 @@ void NormalOperationMode::createTabContent(int tabId) {
 }
 
 void NormalOperationMode::testJogEvent(char action) {
+  if (action == '6') { tabSelector->setSelectedTab(TAB_THREAD); onTabSelected(TAB_THREAD); }
+  if (action == '6' || action == '8') { lv_event_send(startStopButton, LV_EVENT_CLICKED, nullptr); return; }
   const DPad::Direction directions[] = {DPad::BTN_UP, DPad::BTN_DOWN, DPad::BTN_LEFT, DPad::BTN_RIGHT};
   if (action >= '1' && action <= '4') {
     lv_event_send(dpad->getButton(directions[action - '1']), LV_EVENT_PRESSED, nullptr);

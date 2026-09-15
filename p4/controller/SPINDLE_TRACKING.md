@@ -72,11 +72,12 @@ clearances. A cutting pass needs space for both lead-in and deceleration after
 the thread ends. The test moves are 20 mm long and evaluate cutting from the
 reported lead distance through 16 mm, leaving 4 mm for run-out.
 
-The assisted-operation service must still place these sections in actual machine
+An assisted-operation service must place these sections in actual machine
 coordinates, respect machining stops and available clearance, and preserve a
 common thread reference when choosing approach positions for repeated passes.
-No touchscreen threading cycle is enabled yet. Physical encoder and loaded
-motor validation are still required before machine use.
+The subsequent [assisted-cycle service](ASSISTED_CYCLES.md) now enables
+bench-only Turn/Thread cycles with explicit approach, run-out and clearance.
+Physical encoder and loaded motor validation are still required before machine use.
 
 ## Tests
 
@@ -148,6 +149,6 @@ for the update workflow.
 
 These are MCU timestamp and GPIO-count measurements on a disconnected tablet.
 They do not measure loaded motor acceleration, actual thread accuracy, external
-pulse shape, or the physical spindle encoder. The next application step is to
-use this backend in assisted cycles with explicit approach, lead-in, cut,
-run-out and return geometry while preserving the original operation semantics.
+pulse shape, or the physical spindle encoder. The following application stage uses this backend in
+[assisted Turn/Thread cycles](ASSISTED_CYCLES.md), with explicit approach, lead-in,
+cut, run-out and return geometry. The other operations remain migration work.

@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "main.h"
+#include "lv_conf.h"
 #include "bridge.h"
 #include "display.h"
 #include "StateMachine.h"
@@ -24,7 +25,9 @@ static h5_status_t status;
 static std::atomic<bool> ui_ready{false};
 static std::atomic<uint32_t> ui_updates{0};
 static QueueHandle_t test_actions;
-static lv_obj_t *status_label, *update_panel;
+static lv_obj_t *status_label, *update_panel, *cycle_panel, *cycle_run;
+static h5_cycle_config_t preview_config;
+static bool cycle_selected;
 static String notice;
 static uint32_t last_command, last_completed, last_generation;
 static Axis *held_axis;
@@ -38,7 +41,7 @@ static void send(const char *line)
 {
     uint32_t id = h5_bridge_submit(line);
     if (id) { last_command = id; notice.clear(); }
-    else notice = "Command queue is full";
+    else notice = h5_cycle_busy() ? "Stop the cycle before jogging" : "Command queue is full";
 }
 static float steps_mm(const Axis *a)
 {
@@ -116,9 +119,68 @@ void setModeFromTask(int value)
     mode = value;
     notice.clear();
 }
+static void preview_cycle()
+{
+    if (status.moving || status.held || status.alarm || !status.ready || h5_cycle_busy()) {
+        notice = "Stop motion before preparing a cycle"; return;
+    }
+    if (x.disabled || z.disabled) { notice = "Both axes must be available"; return; }
+    if (x.leftStop==LONG_MAX || x.rightStop==LONG_MIN || z.leftStop==LONG_MAX || z.rightStop==LONG_MIN) {
+        notice = "Set both X and Z machining bounds"; return;
+    }
+    preview_config = {};
+    preview_config.threading = mode==MODE_THREAD;
+    preview_config.aux_forward = auxForward;
+    preview_config.passes = turnPasses;
+    preview_config.starts = mode==MODE_THREAD ? starts : 1;
+    preview_config.pitch = dupr/10000.0;
+    preview_config.x_min = x.rightStop/steps_mm(&x);
+    preview_config.x_max = x.leftStop/steps_mm(&x);
+    preview_config.z_min = z.rightStop/steps_mm(&z);
+    preview_config.z_max = z.leftStop/steps_mm(&z);
+    double lead=fabs(preview_config.pitch)*preview_config.starts;
+    preview_config.rpm_limit = lead > 0 ? fmin(ceil(fabs(status.rpm)*1.25), .98*status.max_rate[2]/lead) : 0;
+    h5_cycle_machine_t machine = {x.pos/steps_mm(&x),z.pos/steps_mm(&z),status.rpm,
+        status.acceleration[2],status.max_rate[2],steps_mm(&z)};
+    h5_cycle_plan_t plan;
+    char error[96];
+    if (!h5_cycle_plan(&preview_config,&machine,&plan,error,sizeof(error))) { notice=error; return; }
+    if (cycle_panel) lv_obj_del(cycle_panel);
+    cycle_panel=lv_obj_create(lv_scr_act());
+    lv_obj_set_style_text_font(cycle_panel,LV_FONT_BIG,0);
+    lv_obj_set_size(cycle_panel,1000,650); lv_obj_center(cycle_panel);
+    lv_obj_move_foreground(cycle_panel);
+    lv_obj_t *label=lv_label_create(cycle_panel);
+    lv_obj_set_width(label,940);
+    char text[1000];
+    snprintf(text,sizeof(text),
+        "%s cycle / disconnected bench\n\n%u depth passes x %u starts | lead %.4f mm/rev\n"
+        "Machining Z: %.3f to %.3f mm\nApproach Z: %.3f mm | Run-out end Z: %.3f mm\n"
+        "X infeed: %.3f to %.3f mm | Retracted X: %.3f mm\n"
+        "Lead-in: %.3f mm | Run-out: %.3f mm\n\n"
+        "Keep spindle between 30 and %.0f RPM in the current direction.\n"
+        "Coordinates above are machine coordinates; X is radial.\n"
+        "Approach and clearance extend beyond the machining bounds.\n"
+        "STOP decelerates and cancels the pass; it does not resume mid-thread.",
+        preview_config.threading ? "Thread" : "Turn",preview_config.passes,plan.starts,plan.lead,
+        plan.z_start,plan.z_end,plan.approach,plan.finish,plan.x_start,plan.x_end,plan.clearance,
+        plan.lead_in,plan.run_out,preview_config.rpm_limit);
+    lv_label_set_text(label,text); lv_obj_align(label,LV_ALIGN_TOP_LEFT,5,5);
+    lv_obj_t *run=cycle_run=lv_btn_create(cycle_panel); lv_obj_set_size(run,300,65); lv_obj_align(run,LV_ALIGN_BOTTOM_RIGHT,-10,-10);
+    lv_obj_t *run_text=lv_label_create(run); lv_label_set_text(run_text,"RUN BENCH CYCLE"); lv_obj_center(run_text);
+    lv_obj_add_event_cb(run,[](lv_event_t *) {
+        if (h5_cycle_request(&preview_config)) { cycle_selected=true; isOn=true; notice.clear(); }
+        else notice="Another cycle is active";
+        lv_obj_del(cycle_panel); cycle_panel=nullptr;
+    },LV_EVENT_CLICKED,nullptr);
+    lv_obj_t *close=lv_btn_create(cycle_panel); lv_obj_set_size(close,220,65); lv_obj_align(close,LV_ALIGN_BOTTOM_LEFT,10,-10);
+    lv_obj_t *close_text=lv_label_create(close); lv_label_set_text(close_text,"CANCEL"); lv_obj_center(close_text);
+    lv_obj_add_event_cb(close,[](lv_event_t *) { lv_obj_del(cycle_panel); cycle_panel=nullptr; },LV_EVENT_CLICKED,nullptr);
+}
 void buttonOnOffPress(bool on)
 {
     if (!on) { h5_bridge_cancel(); held_axis = nullptr; isOn = false; return; }
+    if (mode == MODE_TURN || mode == MODE_THREAD) { preview_cycle(); return; }
     if (mode == MODE_ASYNC && dupr) {
         jog(&z, dupr > 0 ? 1 : -1, MAX_TRAVEL_MM_Z, fabsf(dupr / 10000.0f) * 60.0f);
         isOn = true;
@@ -141,6 +203,7 @@ void h5_ui_sync()
     if (status.stream_generation != last_generation) {
         held_axis = nullptr;
         isOn = false;
+        if (cycle_panel) { lv_obj_del(cycle_panel); cycle_panel=nullptr; }
         last_generation = status.stream_generation;
     }
     x.pos = status.position[0];
@@ -149,7 +212,13 @@ void h5_ui_sync()
         last_completed = status.completed_id;
         if (status.command_status) notice = "Command rejected (" + std::to_string(status.command_status) + ")";
     }
-    if (isOn && !status.moving && status.completed_id >= last_command) isOn = false;
+    h5_cycle_status_t cycle; h5_cycle_snapshot(&cycle);
+    if (cycle.active) {
+        cycle_selected=true;
+        isOn=true;
+        notice=String(cycle.message)+" | Pass "+std::to_string(cycle.pass)+", start "+std::to_string(cycle.start);
+    } else if (cycle_selected) { isOn=false; cycle_selected=false; notice=cycle.message; }
+    else if (isOn && !status.moving && status.completed_id >= last_command) isOn = false;
     if (held_axis && !continuous_jog && !status.moving && status.completed_id >= last_command && millis() - last_jog_time >= 150) {
         jog(held_axis, held_sign, moveStep / 10000.0f, held_axis == &x ? 60 : 960);
         last_jog_time = millis();
@@ -210,7 +279,15 @@ static void ui_task(void *)
         char action;
         while (xQueueReceive(test_actions, &action, 0) == pdTRUE) {
             OperationMode *screen = screens.getCurrentMode();
-            if (screen && strcmp(screen->getName(), "Normal Operation") == 0)
+            if (action=='6' && !h5_cycle_busy() && !status.moving) {
+                // Explicit disconnected-bench fixture; normal UI uses the
+                // operator's existing machining bounds and selected settings.
+                mode=MODE_THREAD; dupr=5000; turnPasses=2; starts=2; auxForward=true;
+                x.rightStop=0; x.leftStop=lround(steps_mm(&x)*.1);
+                z.rightStop=0; z.leftStop=lround(steps_mm(&z)*6);
+            }
+            if (action=='7' && cycle_panel) lv_event_send(cycle_run,LV_EVENT_CLICKED,nullptr);
+            else if (screen && strcmp(screen->getName(), "Normal Operation") == 0)
                 static_cast<NormalOperationMode *>(screen)->testJogEvent(action);
         }
         screens.updateDisplay();
@@ -230,7 +307,7 @@ extern "C" bool h5_ui_ready(void) { return ui_ready.load(); }
 extern "C" uint32_t h5_ui_updates(void) { return ui_updates.load(std::memory_order_relaxed); }
 extern "C" bool h5_ui_test_action(char action)
 {
-    return ui_ready.load() && strchr("123405", action) && xQueueSend(test_actions, &action, 0) == pdTRUE;
+    return ui_ready.load() && strchr("123405678", action) && xQueueSend(test_actions, &action, 0) == pdTRUE;
 }
 extern "C" bool h5_ui_screenshot(void (*write)(const char *))
 {

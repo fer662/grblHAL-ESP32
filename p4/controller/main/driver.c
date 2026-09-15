@@ -23,6 +23,7 @@
 #include "bridge.h"
 #include "fpu_isr.h"
 #include "spindle.h"
+#include "cycle.h"
 
 #if !H5_BENCH_ONLY
 #error "Machine output enable requires the remaining hardware acceptance gates."
@@ -275,6 +276,7 @@ static void realtime(sys_state_t state)
     h5_serial_poll();
     h5_spindle_poll();
     h5_bridge_poll();
+    h5_cycle_poll();
     // Let the idle task and UART worker run while the core waits for input.
     // Pulse timing belongs solely to the hardware timers, never this delay.
     static uint32_t yielded;
@@ -292,6 +294,8 @@ static void settings_changed(settings_t *s, settings_changed_flags_t changed)
 }
 static status_code_t command(sys_state_t state, char *line)
 {
+    status_code_t cycle_result = h5_cycle_command(state, line);
+    if (cycle_result != Status_Unhandled) return cycle_result;
     status_code_t spindle_result = h5_spindle_command(state, line);
     if (spindle_result != Status_Unhandled) return spindle_result;
     if (strcmp(line, "P4FPUTEST") == 0) {

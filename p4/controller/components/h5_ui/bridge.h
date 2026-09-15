@@ -2,6 +2,7 @@
 #pragma once
 #include <stdbool.h>
 #include <stdint.h>
+#include "cycle_plan.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -9,6 +10,7 @@ extern "C" {
 typedef struct {
     int32_t position[3];
     float steps_per_mm[3];
+    float max_rate[3], acceleration[3];
     float rpm;
     uint32_t command_id, completed_id, stream_generation;
     int command_status, alarm;
@@ -16,6 +18,19 @@ typedef struct {
     char state[24];
 } h5_status_t;
 
+typedef struct {
+    bool active;
+    unsigned pass, start;
+    char message[96];
+} h5_cycle_status_t;
+bool h5_cycle_request(const h5_cycle_config_t *config); // thread safe, copied on submit
+bool h5_cycle_busy(void);
+bool h5_cycle_owns_stream(void);
+void h5_cycle_cancel(void);
+void h5_cycle_snapshot(h5_cycle_status_t *status);
+uint32_t h5_bridge_cycle_submit(const char *line); // cycle service only
+bool h5_bridge_empty(void); // grbl task only
+void h5_bridge_discard_cycle_commands(void); // grbl task only
 void h5_bridge_init(void);
 void h5_bridge_flush(void); // grbl task only; discard requests on stream reset
 void h5_bridge_poll(void); // grbl task only

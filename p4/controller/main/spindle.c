@@ -62,6 +62,7 @@ static int64_t IRAM_ATTR oriented_position(void)
 { int64_t p = position(); return commanded.ccw ? -p : p; }
 static int64_t IRAM_ATTR floor_turn(int64_t counts)
 { return counts >= 0 ? counts / H5_ENCODER_CPR : -((-counts + H5_ENCODER_CPR - 1) / H5_ENCODER_CPR); }
+bool h5_spindle_waiting_index(void) { return waiting; }
 bool h5_spindle_near_index(void)
 {
     // A one-tick sleep near a revolution boundary adds variable phase lag.

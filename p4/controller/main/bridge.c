@@ -8,6 +8,7 @@
 #include "grbl/state_machine.h"
 #include "bridge.h"
 #include "spindle.h"
+#include "cycle.h"
 
 // The core remains the sole parser/planner owner. UI messages enter its normal
 // stream at complete-line boundaries; callbacks never execute G-code reentrantly.
@@ -23,7 +24,7 @@ static uint32_t reporting_id;
 static status_message_ptr previous_report;
 static on_report_handlers_init_ptr previous_report_init;
 
-uint32_t h5_bridge_submit(const char *line)
+static uint32_t submit(const char *line)
 {
     if (!commands || !line || strlen(line) >= sizeof(current.text) - 1 || strchr(line, '\n') || strchr(line, '\r')) return 0;
     request_t request;
@@ -35,8 +36,20 @@ uint32_t h5_bridge_submit(const char *line)
     if (xQueueSend(commands, &request, 0) != pdTRUE) return 0;
     return request.id;
 }
+uint32_t h5_bridge_submit(const char *line)
+{ return h5_cycle_busy() ? 0 : submit(line); }
+uint32_t h5_bridge_cycle_submit(const char *line) { return submit(line); }
+bool h5_bridge_empty(void)
+{ return !active && !acknowledge_error && !reporting_id && uxQueueMessagesWaiting(commands)==0; }
+void h5_bridge_discard_cycle_commands(void)
+{
+    // Service only calls this between parser reads; epoch invalidation discards
+    // pending requests without truncating a partially delivered command.
+    portENTER_CRITICAL(&lock); epoch++; portEXIT_CRITICAL(&lock);
+}
 void h5_bridge_flush(void)
 {
+    h5_cycle_reset();
     active = acknowledge_error = false;
     reporting_id = 0;
     portENTER_CRITICAL(&lock);
@@ -47,15 +60,16 @@ void h5_bridge_flush(void)
 }
 void h5_bridge_cancel(void)
 {
+    if (h5_cycle_busy()) { h5_cycle_cancel(); return; }
     portENTER_CRITICAL(&lock);
     epoch++;
     realtime_requests |= 1;
     portEXIT_CRITICAL(&lock);
 }
 void h5_bridge_hold(void)
-{ portENTER_CRITICAL(&lock); realtime_requests |= 2; portEXIT_CRITICAL(&lock); }
+{ if (h5_cycle_busy()) { h5_cycle_cancel(); return; } portENTER_CRITICAL(&lock); realtime_requests |= 2; portEXIT_CRITICAL(&lock); }
 void h5_bridge_resume(void)
-{ portENTER_CRITICAL(&lock); realtime_requests |= 4; portEXIT_CRITICAL(&lock); }
+{ if (h5_cycle_busy()) return; portENTER_CRITICAL(&lock); realtime_requests |= 4; portEXIT_CRITICAL(&lock); }
 void h5_bridge_snapshot(h5_status_t *s)
 { portENTER_CRITICAL(&lock); *s = published; portEXIT_CRITICAL(&lock); }
 bool h5_bridge_active(void) { return active || acknowledge_error; }
@@ -129,7 +143,11 @@ void h5_bridge_poll(void)
     hal.irq_disable();
     for (unsigned i = 0; i < 3; i++) s.position[i] = sys.position[i];
     hal.irq_enable();
-    for (unsigned i = 0; i < 3; i++) s.steps_per_mm[i] = settings.axis[i].steps_per_mm;
+    for (unsigned i = 0; i < 3; i++) {
+        s.steps_per_mm[i] = settings.axis[i].steps_per_mm;
+        s.max_rate[i] = settings.axis[i].max_rate;
+        s.acceleration[i] = settings.axis[i].acceleration / 3600.0f;
+    }
     sys_state_t state = state_get();
     s.ready = sys.driver_started;
     s.moving = state == STATE_CYCLE || state == STATE_JOG || state == STATE_HOMING;

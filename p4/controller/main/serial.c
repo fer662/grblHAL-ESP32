@@ -8,7 +8,12 @@
 #include "grbl/stepper.h"
 #include "serial.h"
 #include "bridge.h"
-static bool usb_line_active;
+#include "cycle.h"
+#include "grbl/state_machine.h"
+static bool usb_line_active, cycle_dropping;
+static char cycle_line[64];
+static unsigned cycle_line_length;
+bool h5_serial_pending(void) { return usb_line_active || hal.stream.get_rx_buffer_count(); }
 
 // Only the grbl task reads UART and owns this ring. Realtime commands are
 // extracted before queued G-code, including while the planner buffer is full.
@@ -24,7 +29,8 @@ static uint16_t space(void) { return sizeof(rx) - 1 - count(); }
 static void flush(void)
 {
     head = tail = 0;
-    dropping_line = usb_line_active = false;
+    dropping_line = usb_line_active = cycle_dropping = false;
+    cycle_line_length=0;
     h5_bridge_flush();
 }
 static void cancel(void) { flush(); rx[head++] = ASCII_CAN; }
@@ -64,7 +70,27 @@ void h5_serial_poll(void)
     int n = uart_read_bytes(UART_NUM_0, data, sizeof(data), 0);
     for (int i = 0; i < n; i++) {
         uint8_t c = data[i];
+        if (h5_cycle_busy() && (c == CMD_JOG_CANCEL || c == CMD_FEED_HOLD || c == CMD_FEED_HOLD_LEGACY)) {
+            h5_cycle_cancel(); continue;
+        }
+        if (h5_cycle_busy() && (c == CMD_CYCLE_START || c == CMD_CYCLE_START_LEGACY)) continue;
         if (realtime(c)) continue;
+        // A cycle owns the parser. Reject competing USB lines immediately;
+        // never save them to execute unexpectedly after a cycle finishes.
+        if (h5_cycle_owns_stream() || cycle_dropping) {
+            cycle_dropping = c != '\n' && c != '\r';
+            if (cycle_dropping) {
+                if (cycle_line_length < sizeof(cycle_line)-1) cycle_line[cycle_line_length++]=c;
+            } else {
+                cycle_line[cycle_line_length]=0;
+                if (!strcmp(cycle_line,"$P4CYCLE")) {
+                    h5_cycle_command(state_get(),cycle_line+1); write_string("ok\r\n");
+                } else if (!strcmp(cycle_line,"$P4UITEST=8") && h5_ui_test_action('8')) write_string("ok\r\n");
+                else if (cycle_line_length) write_string("error:8\r\n");
+                cycle_line_length=0;
+            }
+            continue;
+        }
         if (dropping_line) {
             if (c == '\n' || c == '\r') dropping_line = false;
             continue;
