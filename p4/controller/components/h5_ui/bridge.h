@@ -27,10 +27,15 @@ bool h5_cycle_request(const h5_cycle_config_t *config); // thread safe, copied o
 bool h5_cycle_busy(void);
 bool h5_cycle_owns_stream(void);
 void h5_cycle_cancel(void);
+bool h5_cycle_advance(void);
 void h5_cycle_snapshot(h5_cycle_status_t *status);
 uint32_t h5_bridge_cycle_submit(const char *line); // cycle service only
 bool h5_bridge_empty(void); // grbl task only
 void h5_bridge_discard_cycle_commands(void); // grbl task only
+enum { H5_OWNER_PROFILE=1, H5_OWNER_FOLLOW=2, H5_OWNER_UPDATE=3 };
+bool h5_operation_claim(unsigned owner);
+void h5_operation_release(unsigned owner);
+bool h5_motion_idle(void);
 void h5_bridge_init(void);
 void h5_bridge_flush(void); // grbl task only; discard requests on stream reset
 void h5_bridge_poll(void); // grbl task only

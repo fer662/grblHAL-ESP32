@@ -1,7 +1,10 @@
-# Match the existing H5 partition layout for the first USB installation test.
-# No OTA partition migration or NVS/storage erase in this probe.
+# Preserve H5 NVS/storage; all executable slots stay below 16 MiB.
 # Name, Type, SubType, Offset, Size, Flags
 nvs, data, nvs, 0x9000, 0x6000,
 phy_init, data, phy, 0xf000, 0x1000,
-factory, app, factory, 0x10000, 8M,
-storage, data, spiffs, , 7M,
+factory, app, factory, 0x10000, 2M,
+ota_0, app, ota_0, 0x210000, 3M,
+ota_1, app, ota_1, 0x510000, 3M,
+storage, data, spiffs, 0x810000, 7M,
+otadata, data, ota, 0xf10000, 0x2000,
+h5_settings, data, nvs, 0xf12000, 0x10000,

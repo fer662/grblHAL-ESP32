@@ -1,3 +1,4 @@
+#include "bridge.h"
 #include "NormalOperationMode.h"
 #include "App_Style.h"
 #include "Axis.h"
@@ -303,11 +304,12 @@ void NormalOperationMode::createPassesButton() {
 
   // Add click handler to show numpad
   LVCallbackWrapper::add(passesButton, LV_EVENT_CLICKED, [this](lv_event_t *e) {
-    this->numpad->show(Numpad::PASSES_SETTING);
+    if (!h5_cycle_busy()) this->numpad->show(Numpad::PASSES_SETTING);
     Buzzer::getInstance().beepSuccess();
   });
 
   // Initialize the button appearance
+  LVCallbackWrapper::add(passesButton, LV_EVENT_LONG_PRESSED, [](lv_event_t *) { h5_cycle_advance(); });
   updatePassesButton(true);
 }
 
@@ -1221,8 +1223,17 @@ void NormalOperationMode::createTabContent(int tabId) {
 }
 
 void NormalOperationMode::testJogEvent(char action) {
-  if (action == '6') { tabSelector->setSelectedTab(TAB_THREAD); onTabSelected(TAB_THREAD); }
-  if (action == '6' || action == '8') { lv_event_send(startStopButton, LV_EVENT_CLICKED, nullptr); return; }
+  int tab=-1;
+  if(action=='6')tab=TAB_THREAD;
+  else if(action=='F')tab=TAB_FACE;
+  else if(action=='C')tab=TAB_CUT;
+  else if(action=='E')tab=TAB_ELLIPSE;
+  else if(action=='G')tab=TAB_GEARBOX;
+  else if(action=='K')tab=TAB_CONE;
+  else if(action=='A')tab=TAB_ASYNC;
+  if(tab>=0) {tabSelector->setSelectedTab(tab);onTabSelected(tab);}
+  if(action=='D') {lv_event_send(passesButton,LV_EVENT_LONG_PRESSED,nullptr);return;}
+  if (tab>=0 || action == '8') { lv_event_send(startStopButton, LV_EVENT_CLICKED, nullptr); return; }
   const DPad::Direction directions[] = {DPad::BTN_UP, DPad::BTN_DOWN, DPad::BTN_LEFT, DPad::BTN_RIGHT};
   if (action >= '1' && action <= '4') {
     lv_event_send(dpad->getButton(directions[action - '1']), LV_EVENT_PRESSED, nullptr);

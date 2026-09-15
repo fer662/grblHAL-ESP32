@@ -215,6 +215,10 @@ def rpm_limit():
 try:
     port.open(); time.sleep(3); port.reset_input_buffer()
     assert any('H5_P4_BENCH_MOTOR_ENABLES_LOCKED' in line for line in command('$I'))
+    ready_deadline=time.monotonic()+30
+    while not any('P4UI:READY:1' in s for s in command('$P4UI')):
+        assert time.monotonic()<ready_deadline,'Peripheral initialization did not finish'
+        time.sleep(.1)
     diag()
     if args.limit_only:
         rpm_limit()

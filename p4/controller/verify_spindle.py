@@ -13,6 +13,7 @@ import serial
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('port')
 parser.add_argument('--fault', choices=['stall', 'reverse', 'deadline'])
+parser.add_argument('--startup-delay', type=float, default=0, help='Diagnostic delay before starting motion')
 parser.add_argument('--abrupt', action='store_true', help='Diagnostic speed jumps outside the assumed spindle-slew envelope')
 args = parser.parse_args()
 port = serial.Serial()
@@ -86,6 +87,8 @@ def cut(phase=0, pitch=1, direction=1, speed=300, change=None):
         command('$P4SIMCHANGE=' + str(change) + ',1500')
     before = diagnostics()
     command(f'G33 Z{direction * 10} K{pitch}')
+    idle()  # A parser acknowledgment is not proof that the last STEP completed.
+    time.sleep(.02)
     after = diagnostics()
     assert int(after['Z'].split(',')[0]) - int(before['Z'].split(',')[0]) == 2000
     d = fields('$P4SYNC', '[P4SYNC:')
@@ -114,7 +117,12 @@ try:
     time.sleep(3)
     port.reset_input_buffer()
     assert any('H5_P4_BENCH_MOTOR_ENABLES_LOCKED' in x for x in command('$I'))
+    ready_deadline=time.monotonic()+30
+    while not any('P4UI:READY:1' in s for s in command('$P4UI')):
+        assert time.monotonic()<ready_deadline,'Peripheral initialization did not finish'
+        time.sleep(.1)
     diagnostics()
+    time.sleep(args.startup_delay)
     assert any('P4FPUTEST:PASS' in x for x in command('$P4FPUTEST'))
     command('$90=0.25')
     command('$91=0')
@@ -145,7 +153,7 @@ try:
         command('M3 S300')
         time.sleep(.3)
         command('$P4ENCODERTEST', error=8)
-        command('G33 X1 Z10 K1', error=20)
+        command('G33 X20 K1', error=43)
         command('$P4SIM=OFF')
         phases = [cut(phase=p) for p in (0, 0, 0, 400, 800)]
         registration = [((value - offset - phases[0] + 600) % 1200) - 600
@@ -166,6 +174,13 @@ try:
         ui_after = fields('$P4UI', '[P4UI:')
         assert int(ui_after['UI_UPDATES']) > int(ui_before['UI_UPDATES']) + 100
         print('PASS: spindle bench suite; UI remained active. Speed transients, lead-in and physical phase still require machine validation.', flush=True)
+except BaseException:
+    if port.is_open:
+        port.write(b'$P4DEADLINE\n$P4AUDIO\n$P4OTA\n');end=time.monotonic()+2
+        while time.monotonic()<end:
+            line=port.readline().decode(errors='replace').strip()
+            if line:print(re.sub(r'KEY:[^|]*','KEY:<withheld>',line),flush=True)
+    raise
 finally:
     if port.is_open:
         port.write(b'\x18')

@@ -9,6 +9,10 @@
 #include "serial.h"
 #include "bridge.h"
 #include "cycle.h"
+#include "follow.h"
+#include "update.h"
+#include "network.h"
+#include "spindle.h"
 #include "grbl/state_machine.h"
 static bool usb_line_active, cycle_dropping;
 static char cycle_line[64];
@@ -74,18 +78,35 @@ void h5_serial_poll(void)
             h5_cycle_cancel(); continue;
         }
         if (h5_cycle_busy() && (c == CMD_CYCLE_START || c == CMD_CYCLE_START_LEGACY)) continue;
+        if(c==CMD_RESET && h5_follow_busy()) h5_follow_cancel();
         if (realtime(c)) continue;
         // A cycle owns the parser. Reject competing USB lines immediately;
         // never save them to execute unexpectedly after a cycle finishes.
-        if (h5_cycle_owns_stream() || cycle_dropping) {
+        if (h5_cycle_owns_stream() || h5_update_active() || cycle_dropping) {
             cycle_dropping = c != '\n' && c != '\r';
             if (cycle_dropping) {
                 if (cycle_line_length < sizeof(cycle_line)-1) cycle_line[cycle_line_length++]=c;
             } else {
                 cycle_line[cycle_line_length]=0;
-                if (!strcmp(cycle_line,"$P4CYCLE")) {
+                if(h5_update_active() && (!strcmp(cycle_line,"$P4OTA") || !strcmp(cycle_line,"$P4OTA=0") || !strcmp(cycle_line,"$P4UITEST=Q"))) {
+                    if(!strcmp(cycle_line,"$P4UITEST=Q")) h5_ui_test_action('Q');
+                    else h5_network_command(state_get(),cycle_line+1);
+                    write_string("ok\r\n");
+                } else if(h5_follow_busy() && !strncmp(cycle_line,"$P4UITEST=",10) && strlen(cycle_line)==11 && strchr("1234058+N",cycle_line[10]) && h5_ui_test_action(cycle_line[10])) {
+                    write_string("ok\r\n");
+                } else if (h5_follow_busy() && (!strcmp(cycle_line,"$P4SYNC") || !strcmp(cycle_line,"$P4SYNCTRACE"))) {
+                    status_code_t result=h5_spindle_command(state_get(),cycle_line+1);
+                    write_string(result==Status_OK ? "ok\r\n" : "error:8\r\n");
+                } else if (h5_follow_busy() && (!strncmp(cycle_line,"$P4SIM=",7) || !strncmp(cycle_line,"$P4SIMRAMP=",11))) {
+                    status_code_t result=h5_spindle_command(STATE_IDLE,cycle_line+1);
+                    write_string(result==Status_OK ? "ok\r\n" : "error:8\r\n");
+                } else if (h5_follow_busy() && (!strncmp(cycle_line,"$P4MANUAL=",10) || !strcmp(cycle_line,"$P4RELEASE"))) {
+                    status_code_t result=h5_cycle_command(state_get(),cycle_line+1);
+                    write_string(result==Status_OK ? "ok\r\n" : "error:8\r\n");
+                } else if (!strcmp(cycle_line,"$P4ADVANCE")) {write_string(h5_cycle_advance()?"ok\r\n":"error:8\r\n");
+                } else if (!strcmp(cycle_line,"$P4CYCLE")) {
                     h5_cycle_command(state_get(),cycle_line+1); write_string("ok\r\n");
-                } else if (!strcmp(cycle_line,"$P4UITEST=8") && h5_ui_test_action('8')) write_string("ok\r\n");
+                } else if ((!strcmp(cycle_line,"$P4UITEST=8") || !strcmp(cycle_line,"$P4UITEST=D")) && h5_ui_test_action(cycle_line[10])) write_string("ok\r\n");
                 else if (cycle_line_length) write_string("error:8\r\n");
                 cycle_line_length=0;
             }

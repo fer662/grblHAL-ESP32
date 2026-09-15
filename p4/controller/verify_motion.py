@@ -2,7 +2,7 @@
 """Exercise real grblHAL on an isolated P4 bench build with enables locked.
 
 Run with the IDF Python environment. Never run with the lathe attached.
-No flash operations or permanent settings writes are performed by this client.
+Settings changes exercise the isolated grblHAL settings partition.
 """
 import argparse
 import re
@@ -69,7 +69,7 @@ def wait_state(state, timeout=8):
 def diagnostics():
     lines = command('$P4')
     line = next(s for s in lines if s.startswith('[P4:'))
-    assert '|EN:LOCKED|NVS:RAM|SYNC:BENCH|' in line, line
+    assert '|EN:LOCKED|NVS:' in line and '|SYNC:BENCH|' in line, line
     fields = dict(part.split(':', 1) for part in line.strip('[]').split('|'))
     assert fields['ENABLE_PINS'] == '1,0', fields
     for key in ('FAULT', 'OVERLAP', 'LATE', 'RX_OVF'):
@@ -195,6 +195,11 @@ try:
     print('PASS: P4 grblHAL bench suite complete. Physical load, encoder phase, and external waveform measurements still required.', flush=True)
 except BaseException:
     if port.is_open:
+        port.write(b"$P4\n$P4DEADLINE\n$P4TASKS\n")
+        end=time.monotonic()+2
+        while time.monotonic()<end:
+            line=port.readline().decode(errors="replace").strip()
+            if line:print(line,flush=True)
         port.write(b"\x18")
     raise
 finally:

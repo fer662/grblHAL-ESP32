@@ -12,6 +12,7 @@
 #include "hal/gpio_ll.h"
 #include "esp_timer.h"
 #include "spindle.h"
+#include "follow.h"
 #include "grbl/protocol.h"
 #include "grbl/report.h"
 #include "feedback.h"
@@ -20,6 +21,10 @@ extern void h5_motion_fault(void);
 static portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
 static bool ready;
 static volatile bool tracking, waiting;
+static volatile bool follow_mode, follow_braking;
+static volatile float follow_last_rpm=30;
+void h5_spindle_follow(bool enabled) {follow_mode=enabled;follow_braking=false;follow_last_rpm=30;}
+void h5_spindle_follow_braking(void) {follow_braking=true;}
 static spindle_state_t commanded;
 static int32_t last_raw;
 static int64_t accumulated, origin;
@@ -30,7 +35,8 @@ static int64_t rpm_count, furthest;
 static float measured_rpm;
 static spindle_data_t foreground_data, interrupt_data;
 static const char *sync_fault = "NONE";
-static uint32_t block_pulses;
+static uint32_t block_pulses, axis_pulses[2];
+static unsigned trace_axis=Z_AXIS;
 static int64_t first_edge, last_edge;
 typedef struct { uint32_t step; int64_t encoder; int64_t us; } sample_t;
 static sample_t samples[512];
@@ -58,6 +64,7 @@ static int64_t IRAM_ATTR position(void)
     portEXIT_CRITICAL(&lock);
     return result;
 }
+int64_t h5_spindle_position(void) { return position(); }
 static int64_t IRAM_ATTR oriented_position(void)
 { int64_t p = position(); return commanded.ccw ? -p : p; }
 static int64_t IRAM_ATTR floor_turn(int64_t counts)
@@ -86,7 +93,11 @@ static spindle_data_t *IRAM_ATTR get_data(spindle_data_request_t request)
     else {
         data->index_count = (uint32_t)floor_turn(counts - index_phase);
         data->pulse_count = (uint32_t)counts;
-        data->rpm = fabsf(measured_rpm);
+        // A zero-RPM replan can leave a cancelled G33 waiting on an
+        // effectively infinite step period. Assisted feed cancels on stop;
+        // retain its last nonzero planning RPM until deceleration finishes.
+        float rpm=fabsf(measured_rpm);
+        data->rpm = follow_mode && (follow_braking || rpm<30) ? follow_last_rpm : rpm;
         data->ccw = measured_rpm < 0;
         data->state_programmed = commanded;
     }
@@ -142,16 +153,19 @@ void IRAM_ATTR h5_spindle_block(stepper_t *stepper)
     tracking = stepper->exec_segment->spindle_sync;
     waiting = false;
     if (tracking) {
-        block_pulses = sample_count = 0;
+        block_pulses = sample_count = axis_pulses[0] = axis_pulses[1] = 0;
+        trace_axis=stepper->exec_block->steps.value[X_AXIS] > stepper->exec_block->steps.value[Z_AXIS] ? X_AXIS : Z_AXIS;
         block_pitch = stepper->exec_block->programmed_rate;
         block_steps_mm = stepper->exec_block->steps_per_mm;
         first_edge = last_edge = 0;
         furthest = oriented_position();
     }
 }
-void IRAM_ATTR h5_spindle_edge(bool z_step)
+void IRAM_ATTR h5_spindle_edge(axes_signals_t steps)
 {
-    if (!tracking || !z_step) return;
+    if (!tracking) return;
+    axis_pulses[0] += steps.x; axis_pulses[1] += steps.z;
+    if (!(steps.mask & (1U << trace_axis))) return;
     int64_t counts = oriented_position();
     if (!block_pulses) first_edge = counts;
     last_edge = counts;
@@ -244,10 +258,11 @@ void h5_spindle_poll(void)
         if (delta) last_change = now;
         if (now - rpm_time >= 50) {
             measured_rpm = (float)(counts - rpm_count) * 60000.0f / (H5_ENCODER_CPR * (now - rpm_time));
+            if(follow_mode && !follow_braking && fabsf(measured_rpm)>=30)follow_last_rpm=fabsf(measured_rpm);
             rpm_count = counts; rpm_time = now;
         }
         int64_t oriented = commanded.ccw ? -counts : counts;
-        if (tracking) {
+        if (tracking && !h5_follow_busy()) {
             if (oriented > furthest) furthest = oriented;
             if (now - last_change > 100) { sync_fault = "STALL"; h5_motion_fault(); }
             else if (furthest - oriented > 3) { sync_fault = "REVERSED"; h5_motion_fault(); }
@@ -273,11 +288,11 @@ void h5_spindle_poll(void)
 status_code_t h5_spindle_command(sys_state_t state, char *line)
 {
     if (!strcmp(line, "P4SYNC")) {
-        char text[384];
-        snprintf(text, sizeof(text), "[P4SYNC:RPM:%.2f|RAW:%lld|PHASE:%lu|TRACK:%u|WAIT:%u|FAULT:%s|SIM:%.3f|PULSES:%lu|FIRST:%lld|LAST:%lld|PITCH:%.6f|STEPS_MM:%.3f|INDEX_PHASE:%lu|COMP_MM:%.6f|LEAD_MM:%.6f]\r\n",
+        char text[448];
+        snprintf(text, sizeof(text), "[P4SYNC:RPM:%.2f|RAW:%lld|PHASE:%lu|TRACK:%u|WAIT:%u|FAULT:%s|SIM:%.3f|PULSES:%lu|FIRST:%lld|LAST:%lld|PITCH:%.6f|STEPS_MM:%.3f|INDEX_PHASE:%lu|COMP_MM:%.6f|LEAD_MM:%.6f|TRACE_AXIS:%c|AXIS_STEPS:%lu,%lu]\r\n",
             (double)measured_rpm, (long long)position(), (unsigned long)phase, tracking, waiting, sync_fault, sim_rpm,
             (unsigned long)block_pulses, (long long)first_edge, (long long)last_edge, (double)block_pitch, (double)block_steps_mm,
-            (unsigned long)index_phase, (double)phase_compensation, (double)lead_distance);
+            (unsigned long)index_phase, (double)phase_compensation, (double)lead_distance, trace_axis==X_AXIS ? 'X' : 'Z', (unsigned long)axis_pulses[0], (unsigned long)axis_pulses[1]);
         hal.stream.write(text);
         return Status_OK;
     }

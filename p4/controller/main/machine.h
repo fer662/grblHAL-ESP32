@@ -35,6 +35,10 @@
 
 #define SPINDLE_SYNC_ENABLE 1
 #define SPINDLE_SYNC_FEED_FORWARD 1
+#define SPINDLE_SYNC_PATH_LIMITS 1
 #define SPINDLE_SYNC_INDEX_ORIGIN 1
 #define DEFAULT_SPINDLE_SYNC_P_GAIN 0.25f
 #define DEFAULT_SPINDLE_PPR H5_ENCODER_CPR
+
+// Keep AMASS interpolation interrupts within the display/Wi-Fi timing budget.
+#define AMASS_CUTOFF_HZ 4000

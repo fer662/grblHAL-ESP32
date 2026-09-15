@@ -39,9 +39,13 @@ def response(port, command, timeout=6):
 
 
 def ui(port):
-    lines = response(port, '$P4UI')
-    line = next(s for s in lines if s.startswith('[P4UI:READY:1|'))
-    return dict(part.split(':', 1) for part in line[1:-1].split('|')[1:])
+    deadline=time.monotonic()+30
+    while time.monotonic()<deadline:
+        lines=response(port,'$P4UI')
+        line=next((s for s in lines if s.startswith('[P4UI:READY:1|')),None)
+        if line:return dict(part.split(':',1) for part in line[1:-1].split('|')[1:])
+        time.sleep(.1)
+    raise TimeoutError('Peripheral initialization did not finish')
 
 
 start = time.monotonic()

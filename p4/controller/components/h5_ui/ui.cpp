@@ -2,6 +2,10 @@
 #include "main.h"
 #include "lv_conf.h"
 #include "bridge.h"
+#include "follow.h"
+#include "preferences.h"
+#include "update.h"
+#include "Buzzer.h"
 #include "display.h"
 #include "StateMachine.h"
 #include "NormalOperationMode.h"
@@ -25,7 +29,7 @@ static h5_status_t status;
 static std::atomic<bool> ui_ready{false};
 static std::atomic<uint32_t> ui_updates{0};
 static QueueHandle_t test_actions;
-static lv_obj_t *status_label, *update_panel, *cycle_panel, *cycle_run;
+static lv_obj_t *status_label, *update_label, *update_close, *update_panel, *cycle_panel, *cycle_run;
 static h5_cycle_config_t preview_config;
 static bool cycle_selected;
 static String notice;
@@ -37,6 +41,8 @@ static bool continuous_jog;
 static Display display;
 static StateMachine screens(display);
 
+extern "C" void h5_audio_start(void);
+extern "C" bool h5_audio_initialized(void);
 static void send(const char *line)
 {
     uint32_t id = h5_bridge_submit(line);
@@ -68,6 +74,12 @@ static void jog(Axis *a, int sign, float distance, float feed)
 }
 void h5_ui_jog(Axis *a, int sign, bool pressed)
 {
+    if (h5_follow_busy()) {
+        if(!pressed) { h5_follow_release();held_axis=nullptr;return; }
+        bool continuous=moveStep==MOVE_STEP_1 || moveStep==MOVE_STEP_IMP_1;
+        h5_follow_jog(a->name,sign,continuous?(a==&x?MAX_TRAVEL_MM_X:MAX_TRAVEL_MM_Z):moveStep/10000.0,true);
+        held_axis=a;held_sign=sign;continuous_jog=continuous;last_jog_time=millis();return;
+    }
     if (!pressed) {
         if (held_axis == a) { held_axis = nullptr; h5_bridge_cancel(); }
         return;
@@ -106,11 +118,21 @@ String getAxisLeftStop(Axis *a) { return a->leftStop == LONG_MAX ? "-" : positio
 String getAxisRightStop(Axis *a) { return a->rightStop == LONG_MIN ? "-" : position_text(a, a->rightStop + a->originPos); }
 String getAxisStopDiff(Axis *a)
 { return a->leftStop == LONG_MAX || a->rightStop == LONG_MIN ? "-" : position_text(a, a->leftStop - a->rightStop); }
-void setDupr(long value) { dupr = value; }
-void setTurnPasses(int value) { turnPasses = value; }
-void setStarts(int value) { starts = value; }
-void setAuxForward(bool value) { auxForward = value; }
-void setConeRatio(float value) { coneRatio = value; }
+static void apply_feed_edit()
+{
+    if (h5_follow_busy()) {
+        if (!h5_follow_update(dupr / 10000.0, coneRatio, auxForward))
+            notice = "Feed stopped: select a valid nonzero pitch";
+    } else if (h5_cycle_busy()) {
+        h5_bridge_cancel();
+        notice = "Cycle stopped: review changed parameters before restarting";
+    }
+}
+void setDupr(long value) { if (dupr != value) { dupr = value; apply_feed_edit(); } }
+void setTurnPasses(int value) { if (turnPasses != value) { turnPasses = value; if (h5_cycle_busy()) h5_bridge_cancel(); } }
+void setStarts(int value) { if (starts != value) { starts = value; if (h5_cycle_busy()) h5_bridge_cancel(); } }
+void setAuxForward(bool value) { if (auxForward != value) { auxForward = value; apply_feed_edit(); } }
+void setConeRatio(float value) { if (coneRatio != value) { coneRatio = value; apply_feed_edit(); } }
 bool isPassMode() { return mode == MODE_TURN || mode == MODE_FACE || mode == MODE_THREAD || mode == MODE_CUT || mode == MODE_ELLIPSE; }
 int getApproxRpm() { return (int)lroundf(fabsf(status.rpm)); }
 void setModeFromTask(int value)
@@ -125,11 +147,12 @@ static void preview_cycle()
         notice = "Stop motion before preparing a cycle"; return;
     }
     if (x.disabled || z.disabled) { notice = "Both axes must be available"; return; }
-    if (x.leftStop==LONG_MAX || x.rightStop==LONG_MIN || z.leftStop==LONG_MAX || z.rightStop==LONG_MIN) {
+    if (x.leftStop==LONG_MAX || x.rightStop==LONG_MIN || (mode!=MODE_CUT && (z.leftStop==LONG_MAX || z.rightStop==LONG_MIN))) {
         notice = "Set both X and Z machining bounds"; return;
     }
     preview_config = {};
     preview_config.threading = mode==MODE_THREAD;
+    preview_config.operation = mode==MODE_FACE ? H5_FACE : mode==MODE_CUT ? H5_CUT : mode==MODE_ELLIPSE ? H5_ELLIPSE : mode==MODE_THREAD ? H5_THREAD : H5_TURN;
     preview_config.aux_forward = auxForward;
     preview_config.passes = turnPasses;
     preview_config.starts = mode==MODE_THREAD ? starts : 1;
@@ -138,10 +161,11 @@ static void preview_cycle()
     preview_config.x_max = x.leftStop/steps_mm(&x);
     preview_config.z_min = z.rightStop/steps_mm(&z);
     preview_config.z_max = z.leftStop/steps_mm(&z);
+    if (mode==MODE_CUT) preview_config.z_min=preview_config.z_max=z.pos/steps_mm(&z);
     double lead=fabs(preview_config.pitch)*preview_config.starts;
-    preview_config.rpm_limit = lead > 0 ? fmin(ceil(fabs(status.rpm)*1.25), .98*status.max_rate[2]/lead) : 0;
+    preview_config.rpm_limit = lead > 0 ? fmin(ceil(fabs(status.rpm)*1.25), .88*status.max_rate[mode==MODE_FACE || mode==MODE_CUT ? 0 : 2]/lead) : 0;
     h5_cycle_machine_t machine = {x.pos/steps_mm(&x),z.pos/steps_mm(&z),status.rpm,
-        status.acceleration[2],status.max_rate[2],steps_mm(&z)};
+        status.acceleration[2],status.max_rate[2],steps_mm(&z),status.acceleration[0],status.max_rate[0],steps_mm(&x)};
     h5_cycle_plan_t plan;
     char error[96];
     if (!h5_cycle_plan(&preview_config,&machine,&plan,error,sizeof(error))) { notice=error; return; }
@@ -155,15 +179,15 @@ static void preview_cycle()
     char text[1000];
     snprintf(text,sizeof(text),
         "%s cycle / disconnected bench\n\n%u depth passes x %u starts | lead %.4f mm/rev\n"
-        "Machining Z: %.3f to %.3f mm\nApproach Z: %.3f mm | Run-out end Z: %.3f mm\n"
-        "X infeed: %.3f to %.3f mm | Retracted X: %.3f mm\n"
+        "Machining %c: %.3f to %.3f mm\nApproach: %.3f mm | End: %.3f mm\n"
+        "%c infeed: %.3f to %.3f mm | Retracted: %.3f mm\n"
         "Lead-in: %.3f mm | Run-out: %.3f mm\n\n"
         "Keep spindle between 30 and %.0f RPM in the current direction.\n"
         "Coordinates above are machine coordinates; X is radial.\n"
         "Approach and clearance extend beyond the machining bounds.\n"
         "STOP decelerates and cancels the pass; it does not resume mid-thread.",
-        preview_config.threading ? "Thread" : "Turn",preview_config.passes,plan.starts,plan.lead,
-        plan.z_start,plan.z_end,plan.approach,plan.finish,plan.x_start,plan.x_end,plan.clearance,
+        h5_cycle_name(preview_config.operation),preview_config.passes,plan.starts,plan.lead,
+        plan.cut_axis,plan.cut_start,plan.cut_end,plan.approach,plan.finish,plan.depth_axis,plan.depth_start,plan.depth_end,plan.clearance,
         plan.lead_in,plan.run_out,preview_config.rpm_limit);
     lv_label_set_text(label,text); lv_obj_align(label,LV_ALIGN_TOP_LEFT,5,5);
     lv_obj_t *run=cycle_run=lv_btn_create(cycle_panel); lv_obj_set_size(run,300,65); lv_obj_align(run,LV_ALIGN_BOTTOM_RIGHT,-10,-10);
@@ -180,11 +204,16 @@ static void preview_cycle()
 void buttonOnOffPress(bool on)
 {
     if (!on) { h5_bridge_cancel(); held_axis = nullptr; isOn = false; return; }
-    if (mode == MODE_TURN || mode == MODE_THREAD) { preview_cycle(); return; }
-    if (mode == MODE_ASYNC && dupr) {
-        jog(&z, dupr > 0 ? 1 : -1, MAX_TRAVEL_MM_Z, fabsf(dupr / 10000.0f) * 60.0f);
-        isOn = true;
-    } else notice = "Spindle-synchronized operations are not available in this build yet";
+    if (isPassMode()) { preview_cycle(); return; }
+    if(z.disabled || (mode==MODE_CONE && x.disabled)) {notice="Required axis is disabled";return;}
+    h5_follow_config_t config={};
+    config.mode=mode==MODE_ASYNC?2:mode==MODE_CONE?1:0;config.pitch=dupr/10000.0;
+    config.ratio=coneRatio;config.aux_forward=auxForward;
+    config.x_min=x.rightStop==LONG_MIN?x.pos/steps_mm(&x)-MAX_TRAVEL_MM_X/2:x.rightStop/steps_mm(&x);
+    config.x_max=x.leftStop==LONG_MAX?config.x_min+MAX_TRAVEL_MM_X:x.leftStop/steps_mm(&x);
+    config.z_min=z.rightStop==LONG_MIN?z.pos/steps_mm(&z)-MAX_TRAVEL_MM_Z/2:z.rightStop/steps_mm(&z);
+    config.z_max=z.leftStop==LONG_MAX?config.z_min+MAX_TRAVEL_MM_Z:z.leftStop/steps_mm(&z);
+    if(h5_follow_request(&config)) {cycle_selected=true;isOn=true;} else notice="Controller is busy";
 }
 void buttonMoveStepPress()
 {
@@ -199,9 +228,13 @@ void buttonMeasurePress()
 }
 void h5_ui_sync()
 {
+    h5_preferences_t prefs={};prefs.version=1;prefs.mode=mode;prefs.measure=measure;prefs.pitch_type=pitchType;
+    prefs.pitch=dupr;prefs.move_step=moveStep;prefs.passes=turnPasses;prefs.starts=starts;prefs.cone_ratio=coneRatio;
+    prefs.aux_forward=auxForward;prefs.sound=buzzerEnabled;h5_preferences_set(&prefs);
     h5_bridge_snapshot(&status);
     if (status.stream_generation != last_generation) {
-        held_axis = nullptr;
+        if (!h5_follow_manual_held()) held_axis = nullptr;
+        Buzzer::getInstance().endContinuousBeep();
         isOn = false;
         if (cycle_panel) { lv_obj_del(cycle_panel); cycle_panel=nullptr; }
         last_generation = status.stream_generation;
@@ -216,12 +249,19 @@ void h5_ui_sync()
     if (cycle.active) {
         cycle_selected=true;
         isOn=true;
-        notice=String(cycle.message)+" | Pass "+std::to_string(cycle.pass)+", start "+std::to_string(cycle.start);
+        notice=cycle.message;
+        if(!h5_follow_busy()) notice+=" | Pass "+std::to_string(cycle.pass)+", start "+std::to_string(cycle.start);
     } else if (cycle_selected) { isOn=false; cycle_selected=false; notice=cycle.message; }
     else if (isOn && !status.moving && status.completed_id >= last_command) isOn = false;
     if (held_axis && !continuous_jog && !status.moving && status.completed_id >= last_command && millis() - last_jog_time >= 150) {
-        jog(held_axis, held_sign, moveStep / 10000.0f, held_axis == &x ? 60 : 960);
+        if (h5_follow_busy()) h5_follow_jog(held_axis->name, held_sign, moveStep / 10000.0, true);
+        else jog(held_axis, held_sign, moveStep / 10000.0f, held_axis == &x ? 60 : 960);
         last_jog_time = millis();
+    }
+    if(update_label) {
+        h5_update_status_t update;h5_update_snapshot(&update);char text[400];
+        snprintf(text,sizeof(text),"Firmware update\n\n%s\nIP: %s | Progress: %u%%\nPairing key: %s\n\nUse ota_upload.py with the application .bin file.\nClosing this window leaves an active upload running.",update.message,update.connected?update.ip:"Wi-Fi not connected",update.percent,update.active?update.key:"Open update mode to pair");
+        lv_label_set_text(update_label,text);
     }
     if (status_label) {
         String text = status.ready ? status.state : "Starting controller";
@@ -234,19 +274,21 @@ void h5_ui_show_update()
 {
     h5_bridge_cancel();
     held_axis = nullptr;
+    h5_update_request();
     if (!update_panel) {
         update_panel = lv_obj_create(lv_scr_act());
-        lv_obj_set_size(update_panel, 700, 280);
+        lv_obj_set_size(update_panel, 1000, 430);
+        lv_obj_set_style_text_font(update_panel,LV_FONT_BIG,0);
         lv_obj_center(update_panel);
-        lv_obj_t *label = lv_label_create(update_panel);
-        lv_obj_set_width(label, 650);
+        lv_obj_t *label = update_label = lv_label_create(update_panel);
+        lv_obj_set_width(label, 940);
         lv_label_set_text(label, "Firmware update\n\nUSB installation is available.\nWireless updates will be enabled after the OTA partition migration.");
         lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 15);
-        lv_obj_t *close = lv_btn_create(update_panel);
+        lv_obj_t *close = update_close = lv_btn_create(update_panel);
         lv_obj_set_size(close, 160, 55);
         lv_obj_align(close, LV_ALIGN_BOTTOM_MID, 0, -5);
         lv_obj_t *text = lv_label_create(close); lv_label_set_text(text, "CLOSE"); lv_obj_center(text);
-        lv_obj_add_event_cb(close, [](lv_event_t *) { lv_obj_add_flag(update_panel, LV_OBJ_FLAG_HIDDEN); }, LV_EVENT_CLICKED, nullptr);
+        lv_obj_add_event_cb(close, [](lv_event_t *) { h5_update_cancel(); lv_obj_add_flag(update_panel, LV_OBJ_FLAG_HIDDEN); }, LV_EVENT_CLICKED, nullptr);
     }
     lv_obj_clear_flag(update_panel, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(update_panel);
@@ -273,6 +315,7 @@ static void ui_task(void *)
     bsp_display_unlock();
     bsp_display_backlight_on();
     ESP_LOGI("H5_UI", "READY: H5 touchscreen on grblHAL; 1280x800; eight operation tabs");
+    h5_audio_start();
     ui_ready.store(true);
     for (;;) {
         bsp_display_lock(portMAX_DELAY);
@@ -286,6 +329,21 @@ static void ui_task(void *)
                 x.rightStop=0; x.leftStop=lround(steps_mm(&x)*.1);
                 z.rightStop=0; z.leftStop=lround(steps_mm(&z)*6);
             }
+            if(strchr("FCEGKA",action) && !h5_cycle_busy() && !status.moving) {
+                mode=action=='F'?MODE_FACE:action=='C'?MODE_CUT:action=='E'?MODE_ELLIPSE:action=='G'?MODE_NORMAL:action=='K'?MODE_CONE:MODE_ASYNC;
+                dupr=isPassMode()?500:1000;turnPasses=2;starts=1;auxForward=isPassMode();coneRatio=.2;
+                x.rightStop=isPassMode()?0:-lround(steps_mm(&x));x.leftStop=lround(steps_mm(&x)*(isPassMode()?.1:1));
+                z.rightStop=isPassMode()?0:-lround(steps_mm(&z)*2);z.leftStop=lround(steps_mm(&z)*(isPassMode()?1:2));
+            }
+            if(action=='N') { moveStep=MOVE_STEP_3;continue; }
+            if(action=='+') { setDupr(dupr*2); continue; }
+            if(action=='R' && !h5_cycle_busy() && !status.moving) {
+                mode=MODE_NORMAL;dupr=1000;turnPasses=starts=1;auxForward=false;coneRatio=1;
+                measure=MEASURE_METRIC;pitchType=PITCH_TYPE_MM_PER_TURN;moveStep=MOVE_STEP_1;buzzerEnabled=true;
+                x.leftStop=z.leftStop=LONG_MAX;x.rightStop=z.rightStop=LONG_MIN;continue;
+            }
+            if(action=='U') {h5_ui_show_update();continue;}
+            if(action=='Q' && update_close) {lv_event_send(update_close,LV_EVENT_CLICKED,nullptr);continue;}
             if (action=='7' && cycle_panel) lv_event_send(cycle_run,LV_EVENT_CLICKED,nullptr);
             else if (screen && strcmp(screen->getName(), "Normal Operation") == 0)
                 static_cast<NormalOperationMode *>(screen)->testJogEvent(action);
@@ -298,16 +356,21 @@ static void ui_task(void *)
 }
 extern "C" void h5_ui_start(void)
 {
+    h5_preferences_t prefs;
+    if(h5_preferences_get(&prefs)) {
+        mode=prefs.mode;measure=prefs.measure;pitchType=(PitchType)prefs.pitch_type;dupr=prefs.pitch;moveStep=prefs.move_step;
+        turnPasses=prefs.passes;starts=prefs.starts;coneRatio=prefs.cone_ratio;auxForward=prefs.aux_forward;buzzerEnabled=prefs.sound;
+    }
     test_actions = xQueueCreate(8, sizeof(char));
     configASSERT(test_actions);
     configASSERT(xTaskCreatePinnedToCore(ui_task, "H5_UI", 16384, nullptr, 2, nullptr, 0) == pdPASS);
 }
 
-extern "C" bool h5_ui_ready(void) { return ui_ready.load(); }
+extern "C" bool h5_ui_ready(void) { return ui_ready.load() && h5_audio_initialized() && h5_network_initialized(); }
 extern "C" uint32_t h5_ui_updates(void) { return ui_updates.load(std::memory_order_relaxed); }
 extern "C" bool h5_ui_test_action(char action)
 {
-    return ui_ready.load() && strchr("123405678", action) && xQueueSend(test_actions, &action, 0) == pdTRUE;
+    return ui_ready.load() && strchr("123405678FCEGKAUDQR+N", action) && xQueueSend(test_actions, &action, 0) == pdTRUE;
 }
 extern "C" bool h5_ui_screenshot(void (*write)(const char *))
 {

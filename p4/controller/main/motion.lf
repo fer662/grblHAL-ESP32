@@ -1,0 +1,18 @@
+# Keep the motion ISR's code AND literal data out of the shared flash cache.
+# IRAM_ATTR on an entry point alone does not relocate helpers or constants.
+[mapping:h5_motion]
+archive: libmain.a
+entries:
+    stepper (noflash)
+    pid (noflash)
+    spindle (noflash)
+    driver (noflash)
+    feedback (noflash)
+    state_machine: state_get (noflash)
+    report: report_add_realtime (noflash)
+
+[mapping:h5_motion_math]
+archive: libm.a
+entries:
+    libm_a-sf_ceil (noflash)
+    libm_a-sf_floor (noflash)

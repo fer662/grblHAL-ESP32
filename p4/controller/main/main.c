@@ -4,6 +4,8 @@
 #include "grbl/grbllib.h"
 #include "esp_log.h"
 #include "bridge.h"
+#include "storage.h"
+#include "network.h"
 static void controller(void *arg)
 {
     grbl_enter();
@@ -13,8 +15,9 @@ void app_main(void)
 {
     // UART0 carries the grbl protocol. Concurrent SDK logs would corrupt it.
     esp_log_level_set("*", ESP_LOG_NONE);
-    // No NVS initialization, erase or writes in the bench build.
+    h5_storage_init();
     ESP_LOGI("H5_P4", "grblHAL bench build: driver enables locked inactive");
+    h5_network_start();
     configASSERT(xTaskCreatePinnedToCore(controller, "grblHAL", 16384, NULL, 5, NULL, 1) == pdPASS);
     h5_ui_start();
 }

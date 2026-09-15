@@ -17,24 +17,31 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 - 10 MHz GPTimer scheduler and separate pulse timer. Minimum requested STEP
   width 10 us by default, direction setup at least 5 us. GPIO writes span two
   banks and are sequential; external edge skew has not been measured.
-- Timer callbacks and core step ISR are in IRAM. Cache-disabled operation is
-  **not claimed**: flash writing and OTA are absent from the bench app.
+- The motion linker fragment places the stepper/PID/driver/spindle code and
+  constants in internal RAM. Startup blocks motion until audio and hosted Wi-Fi
+  initialization finishes; optional failures remain reported as unavailable.
+  Timer callbacks and core step ISR are in IRAM. Cache-disabled operation is
+  **not claimed** for the complete call chain: settings writes and OTA require
+  standstill and block competing operation starts.
 - Two hardware PCNT units independently count GPIO STEP edges via the internal
   input path. This checks MCU outputs, not ribbon wiring or motor motion.
 - A third PCNT unit reads spindle A/B using the existing x2 decoding. Accumulator
   watchpoints replace task-level read/clear. Effective calibration stays at
   1200 counts/revolution. No physical index signal is assumed.
-- Bench-only straight Z `G33` synchronization, encoder-derived revolution phase,
+- Bench-only X, Z and tapered `G33` synchronization, encoder-derived revolution phase,
   repeated/multi-start phase diagnostics, and spindle stall/reversal fault stops.
   A P4 assembly boundary preserves the interrupted task's floating-point state;
   a 1,000-interrupt canary runs at boot and is available as `$P4FPUTEST`.
-  G76 and X/tapered synchronized moves remain rejected pending validation.
+  Path-projected rate and acceleration limits cover both physical axes. G76
+  remains rejected; Thread supplies explicit passes and multiple starts.
 - UART0 via the tablet's USB bridge. A single grbl task owns command input;
   realtime commands are handled while the planner is busy. UART and software
   buffer errors cancel the command stream rather than executing truncated input.
 - Bench-only compile gate forces X enable HIGH and Z enable LOW. No command
   or setting can energize drivers. Only use with the tablet disconnected.
-- Settings live in the core's RAM buffer. Existing H5 NVS/storage is untouched.
+- Core settings and UI preferences persist in a separate `h5_settings` NVS
+  partition. Existing H5 NVS/storage is untouched. Positions, zeros and machining
+  stops must be reestablished after reboot.
 - H5 touchscreen widgets imported from the committed H5 baseline, LVGL 8.3.11,
   Waveshare MIPI display and GT911 touch. UI and LVGL run on core 0; grblHAL and
   its timer interrupts run on core 1.
@@ -44,22 +51,23 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
   Stream reset also discards pending UI requests and clears held gestures.
 - X/Z readouts, zero, numeric/continuous/fine jog, machining stops, units,
   original pitch picker, eight operation tabs and cycle parameter controls.
-  Async Z feed uses grbl's accelerated jog path. Turn and Thread now use a
-  serialized assisted-cycle service with a touchscreen geometry preview, radial
-  depth passes, multiple starts, clearance returns and controlled cancellation.
-  The other operation START buttons remain pending; see
-  [assisted cycles](ASSISTED_CYCLES.md).
+  Gearbox, Cone and Async use a serialized assisted-feed service with manual
+  override and resume. Turn, Thread, Face, Cut and Ellipse use the native planner
+  through a cycle service with touchscreen preview and controlled cancellation.
+  See [assisted cycles](ASSISTED_CYCLES.md) for geometry and operating limits.
+- X TMC5160 SPI setup uses the upstream Trinamic library, with readback and an
+  explicit missing-device report on this disconnected tablet. Audio uses the
+  ES8311 codec through a separate worker, so touch callbacks never wait on sound.
+- Hosted Wi-Fi and authenticated dual-slot OTA, touchscreen update mode, boot
+  confirmation and rollback. See [OTA and recovery](OTA.md) before flashing.
 - SDK application logs are suppressed on UART0 to protect protocol responses.
   Core diagnostics remain available through the commands below.
 
-**Not ready to run the lathe yet:** synchronization has synthetic bench coverage,
-including smooth RPM ramps and acceleration phase compensation. Turn/Thread
-recipes now include lead-in and run-out, but their physical clearance and
-loaded-machine behavior remain unverified. TMC5160 SPI initialization, the
-remaining assisted recipes, sound,
-persistent settings, Wi-Fi and dual-slot OTA/rollback are not enabled.
-All eight H5 operations remain migration requirements; none is being removed.
-The disabled enables are intentional even though STEP/DIR are real outputs.
+**Not ready to run the lathe yet:** synthetic encoder and internal GPIO tests
+cannot validate ribbon wiring, actual motor movement, physical clearance or
+cutting behavior. Motor enables remain locked inactive. All eight operations
+are implemented; the remaining regression and hardware gates are tracked in
+[port progress](PORT_PROGRESS.md). The power/battery investigation is deferred.
 
 ## Build
 
@@ -78,18 +86,13 @@ in `main/CMakeLists.txt`, based on the upstream ESP32 driver's list.
 
 ## Bench installation and recovery
 
-First save a full 32 MB device backup outside Git, hash it, and compare the
-actual partition table against this app's generated table. Keep the existing
-bootloader and table. Only write `build/h5_grblhal_p4.bin` at `0x10000`.
-The factory partition is 8 MB. Do not use unrestricted `idf.py flash` on H5:
-that command also writes the bootloader/table.
-
-Save the original bytes for the app's entire sector-rounded overwrite window,
-including the tail sector. Keep the new application installed while continuing
-the port. Recovery is optional: restore that window and verify all 32 MB against
-the pre-test backup with `esptool verify_flash` to return to old H5. If successive
-test images differ in size, the recovery window must cover the largest erase.
-Backups may contain credentials and must never be committed.
+The tablet has migrated to factory + two OTA slots, all below 16 MiB.
+Follow [OTA.md](OTA.md) for the exact layout, authenticated uploads and rollback.
+Do not run unrestricted `idf.py flash`: it also overwrites the bootloader,
+partition table and OTA selection data. App-only factory writes do not update
+an already selected OTA slot. Retain the full 32 MiB original backup outside Git;
+restoring original H5 now requires that complete backup. Backups contain private
+settings and may contain credentials.
 
 Run `python verify_motion.py /dev/cu.YOUR_PORT` with the IDF Python environment.
 The script identifies the bench image before sending motion commands. All
@@ -133,7 +136,7 @@ encoding. `python capture_screen.py PORT screen.png` decodes it without Pillow.
 The capture client resets the grbl session. A rendered screenshot verifies layout,
 not physical panel color, touch alignment or an attached motor.
 
-### Validation, 2026-09-14
+### Historical validation, 2026-09-14
 
 The app was built with ESP-IDF 5.5.2, flashed via USB at 0x10000, and left installed
 on the disconnected Waveshare tablet. The full `verify_motion.py` suite passed
@@ -168,7 +171,7 @@ on LVGL `PRESS_LOST`, so dragging out of a held button follows the release path.
 The motion suite now sends both `RELEASED` and `PRESS_LOST` through the actual
 LVGL button event dispatch, verifying cancellation in all four directions before
 running the coordinated-motion, acceleration, hold/reset and rollover checks.
-The final installed build passed that expanded suite: 4,680 X pulses and 47,324 Z
+The earlier pre-services build passed that expanded suite: 4,680 X pulses and 47,324 Z
 pulses matched hardware counts; fault/overlap/late/RX-overflow counters were zero.
 Internal pulse service spanned 15.3–21.4 us and the longest core callback was 17 us.
 
@@ -179,7 +182,7 @@ checks, not a long-duration or machine-load stability certification.
 The spindle-enabled build subsequently passed the motion suite again, the
 11-cut spindle suite, and independent stall, reversal and missed-deadline fault
 tests. That historical stage is recorded in
-[SPINDLE_VALIDATION.md](SPINDLE_VALIDATION.md). The current installed build also
+[SPINDLE_VALIDATION.md](SPINDLE_VALIDATION.md). The earlier spindle-tracking build also
 passed 13 ramp/phase cases, the motion suite, the nine-cut steady spindle suite,
 all three fault tests and USB/UI regressions. Peak encoder-equivalent phase
 error was 0.0075 mm in the evaluated cutting windows; all 104,000 Z pulses in
@@ -189,19 +192,10 @@ enables remain locked.
 
 ## Remaining port sequence
 
-1. Extend the validated straight-Z synchronization to X/tapered paths and
-   measure the real geared encoder. Smooth-ramp tracking, compensated phase,
-   correction acceleration limits and P4 FPU context checks now pass the bench
-   suite; see [measurements and remaining limits](SPINDLE_TRACKING.md).
-2. Extend the new [assisted-cycle service](ASSISTED_CYCLES.md) beyond Turn and
-   Thread to the remaining operations. Preserve Gearbox engagement/manual
-   override, X cutting, cone/ellipse geometry, pass advance, machining stops and
-   deliberate clearance moves. Complete Async manual override/resume as well.
-3. Add verified TMC5160 SPI configuration, settings/preferences storage and sound.
-4. Add hosted Wi-Fi and dual-slot OTA with rollback; prepare and test a backup-
-   preserving partition migration. Flash writes must require motion stopped.
-5. Verify external waveforms, encoder phase and actual drives before removing the
-   bench enable lock; then validate the preserved operations on the machine.
+See [PORT_PROGRESS.md](PORT_PROGRESS.md) for current implementation, final
+regression status and the hardware checks that require the actual lathe.
+Historical measurements below and in linked validation documents are identified
+by their firmware stage; they do not certify later builds.
 
 ## Upstream updates
 
@@ -211,15 +205,24 @@ core submodule revision, then rerun this build and device suite. Review HAL
 version, settings version, core source inventory and ISR dependencies on every
 core upgrade. Do not advance the core automatically from a moving branch.
 
-The core submodule now points to `https://github.com/fer662/grblHAL-core`, branch
-`codex/spindle-tracking`, commit `17c13030ab8a7317943bf54ae1a55d3c57f139bd`.
-It has two local commits over upstream `516e5ad80757bd2eba86bff18feb613ca121dc16`:
-the fractional-time correction `44aad88` and the opt-in tracking extension
-`17c1303`. The original `codex/spindle-segment-time` branch still contains only
-the first fix. Preserve that separation when merging/rebasing upstream; drop
-local changes only after equivalent upstream behavior passes the regressions.
-The optional tracking extension currently assumes straight Z synchronization;
-review its acceleration constraint before enabling other synchronized paths.
-Configuration and H5 application code stay outside the core.
+The core submodule points to `https://github.com/fer662/grblHAL-core`, branch
+`codex/spindle-tracking`, commit `f799fd0f284c25d592821f800452cba6fc1ea78a`.
+It has four isolated commits over upstream `516e5ad80757bd2eba86bff18feb613ca121dc16`:
+
+| Commit | Purpose |
+| --- | --- |
+| `44aad88` | Exclude carried fractional-step time from spindle phase targets. |
+| `17c1303` | Opt-in RPM feed-forward and acceleration phase tracking. |
+| `28dabc2` | Opt-in rate and acceleration limits for the actual X/Z path. |
+| `f799fd0` | Configurable AMASS cutoff; the upstream default remains 8000 Hz. |
+
+The original `codex/spindle-segment-time` branch retains only the first fix.
+Preserve this separation when merging/rebasing upstream; drop a local patch only
+after equivalent upstream behavior passes the regressions. Configuration,
+services, touchscreen, settings and hardware adaptation stay outside the core.
+For future upgrades, build the pinned application, run geometry tests and all
+`verify_*.py` suites on the disconnected tablet, then repeat relevant external
+waveform/encoder checks. A changed timing implementation invalidates old physical
+acceptance measurements even if the software pulse totals still match.
 
 ESP-IDF reference: [P4 GPTimer API](https://docs.espressif.com/projects/esp-idf/en/v5.5.2/esp32p4/api-reference/peripherals/gptimer.html).

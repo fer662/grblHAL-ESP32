@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include <stdio.h>
+#include <stdatomic.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -9,10 +10,14 @@
 #include "bridge.h"
 #include "spindle.h"
 #include "cycle.h"
+#include "update.h"
 
 // The core remains the sole parser/planner owner. UI messages enter its normal
 // stream at complete-line boundaries; callbacks never execute G-code reentrantly.
 typedef struct { uint32_t id, epoch; char text[120]; } request_t;
+static atomic_uint operation_owner;
+bool h5_operation_claim(unsigned owner) {unsigned empty=0;return atomic_compare_exchange_strong(&operation_owner,&empty,owner);}
+void h5_operation_release(unsigned owner) {atomic_compare_exchange_strong(&operation_owner,&owner,0);}
 static QueueHandle_t commands;
 static portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
 static h5_status_t published;
@@ -37,8 +42,8 @@ static uint32_t submit(const char *line)
     return request.id;
 }
 uint32_t h5_bridge_submit(const char *line)
-{ return h5_cycle_busy() ? 0 : submit(line); }
-uint32_t h5_bridge_cycle_submit(const char *line) { return submit(line); }
+{ return h5_cycle_busy() || h5_update_active() ? 0 : submit(line); }
+uint32_t h5_bridge_cycle_submit(const char *line) { return h5_update_active()?0:submit(line); }
 bool h5_bridge_empty(void)
 { return !active && !acknowledge_error && !reporting_id && uxQueueMessagesWaiting(commands)==0; }
 void h5_bridge_discard_cycle_commands(void)
@@ -149,7 +154,7 @@ void h5_bridge_poll(void)
         s.acceleration[i] = settings.axis[i].acceleration / 3600.0f;
     }
     sys_state_t state = state_get();
-    s.ready = sys.driver_started;
+    s.ready = sys.driver_started && h5_ui_ready();
     s.moving = state == STATE_CYCLE || state == STATE_JOG || state == STATE_HOMING;
     s.held = state == STATE_HOLD;
     s.alarm = sys.alarm;

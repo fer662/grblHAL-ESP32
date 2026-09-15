@@ -115,7 +115,7 @@ The older suite's `--abrupt` flag runs speed jumps separately. It is not part
 of acceptance under the owner's spindle-slew assumption. Stall, reversal and
 missed-deadline fault checks remain mandatory bench regressions.
 
-## Installed build results, 2026-09-14
+## Historical installed build results, 2026-09-14
 
 Built with the existing ESP-IDF 5.5.2 environment and flashed app-only through
 USB at `0x10000`; esptool verified the image hash. The new application remains
@@ -152,3 +152,55 @@ They do not measure loaded motor acceleration, actual thread accuracy, external
 pulse shape, or the physical spindle encoder. The following application stage uses this backend in
 [assisted Turn/Thread cycles](ASSISTED_CYCLES.md), with explicit approach, lead-in,
 cut, run-out and return geometry. The other operations remain migration work.
+
+## X/Z paths and services integration, 2026-09-15
+
+`SPINDLE_SYNC_PATH_LIMITS` makes G33 admission checks project feed onto the actual
+participating axes. Each prepared block also retains its path maximum rate and
+acceleration, so spindle correction cannot apply Z-only limits to an X cut or a
+taper. G76 retains its previous path and remains disabled in this application.
+`verify_sync_paths.py` measures both X and taper paths, reversed travel/spindle,
+ramps, endpoints, dominant-axis phase and rejection of excessive X feed.
+
+The driver must clear `stepper->dir_changed` after consuming it, as the upstream
+ESP32 driver does. Leaving it set repeatedly rewrote DIR and scheduled a new
+setup delay on every pulse. The P4 driver now consumes that notification once.
+
+The display, audio and hosted Wi-Fi services increased interrupt pressure. The
+P4 selects `AMASS_CUTOFF_HZ=4000`, while the core default stays 8000 for all other
+drivers. This reduces extra interpolation events without changing physical step
+counts, axis rates, acceleration or the native planner. Deadline and overlap
+fault checks remain unchanged. Workers requesting no CPU affinity are pinned to
+CPU0 by application linker wrappers; explicit SDK affinities are preserved.
+`$P4TASKS` verifies placement. GPTimer's interrupt dispatcher is also placed in
+IRAM. This is not a claim that the complete motion call graph can run with flash
+cache disabled: OTA and settings writes still require standstill.
+
+With these services enabled, the full motion suite counted 4,668 X / 47,516 Z
+pulses exactly. All 13 ramp cases then passed with 104,000 Z pulses, zero timing,
+overlap and receive faults, and peak cutting-window phase error 0.0075 mm.
+The longest measured core callback was 170 us and internal STEP-high service
+spanned 15.3–172 us in the ramp run. Those maxima occur across different rates;
+these tests do not establish a worst-case execution-time guarantee. In particular,
+a passed deadline guard is not a claim of constant 10 us pulse width or externally
+measured edge jitter. External waveforms and the real geared encoder remain
+acceptance gates before removing the motor-enable lock.
+
+
+### Peripheral startup and RAM placement
+
+A later cold-start reversal regression caught a deadline miss before the intended
+reversal. Delaying that same diagnostic until initialization finished passed.
+The application now waits for both audio and hosted-Wi-Fi initialization to
+finish before declaring motion ready; optional-service failures also finish
+initialization and remain reported as unavailable. This is event-based readiness,
+not an arbitrary startup sleep. G-code validation, touchscreen jogging and the
+last-resort timer wake guard prevent early motion.
+
+`main/motion.lf` relocates the stepper, PID, spindle/driver helpers and their
+literal data into internal RAM, including the rounding helpers called by the
+spindle ISR. Marking just the interrupt entry point IRAM was insufficient to
+remove flash-cache dependencies. The generated linker map confirms the relocated
+functions and literals. Five consecutive fresh-boot reversal tests then passed
+with no deadline misses; the intentional reversal still latched its fault and
+stopped pulses. See final device logs for measured callback times.

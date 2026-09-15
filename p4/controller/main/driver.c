@@ -24,6 +24,9 @@
 #include "fpu_isr.h"
 #include "spindle.h"
 #include "cycle.h"
+#include "storage.h"
+#include "network.h"
+#include "update.h"
 
 #if !H5_BENCH_ONLY
 #error "Machine output enable requires the remaining hardware acceptance gates."
@@ -38,6 +41,7 @@ static on_unknown_sys_command_ptr previous_command;
 static delay_callback_ptr delayed_callback;
 static volatile bool running, fault;
 static volatile unsigned pulse_phase; // 0 idle, 1 direction setup, 2 pulse high, 3 hold
+bool h5_motion_idle(void) {return !running && !pulse_phase;}
 static bool reset_after_pulse;
 static uint32_t pulse_ticks = 100, direction_ticks = 50, tick_period = 10000;
 static axes_signals_t step_invert, direction_invert, pending_steps;
@@ -45,6 +49,7 @@ static uint8_t direction;
 static volatile struct {
     uint32_t x_pulses, z_pulses, interrupts, overlaps, late, min_period, max_period;
     uint32_t pulse_min, pulse_max, max_isr_us;
+    uint32_t deadline_kind, deadline_elapsed, deadline_period, deadline_counter;
     int32_t x_position, z_position;
 } diag = {.min_period = UINT32_MAX, .pulse_min = UINT32_MAX};
 static uint64_t pulse_started;
@@ -145,7 +150,7 @@ static void IRAM_ATTR assert_pulse(void)
         diag.z_pulses++;
         diag.z_position += (gpio_ll_get_level(&GPIO, H5_Z_DIR) ^ direction_invert.z) ? -1 : 1;
     }
-    h5_spindle_edge(pending_steps.z);
+    h5_spindle_edge(pending_steps);
     pulse_phase = 2;
     schedule_pulse(pulse_ticks);
 }
@@ -180,7 +185,10 @@ static void IRAM_ATTR pulse_start(stepper_t *stepper)
         h5_motion_fault();
         return;
     }
-    if (stepper->dir_changed.mask) {
+    bool direction_changed = stepper->dir_changed.mask != 0;
+    if (direction_changed) {
+        // grblHAL leaves this notification set until the driver consumes it.
+        stepper->dir_changed.mask = 0;
         direction = stepper->dir_out.mask;
         uint8_t output = direction ^ direction_invert.mask;
         gpio_ll_set_level(&GPIO, H5_X_DIR, !!(output & X_AXIS_BIT));
@@ -188,7 +196,7 @@ static void IRAM_ATTR pulse_start(stepper_t *stepper)
     }
     if (stepper->step_out.mask) {
         pending_steps = stepper->step_out;
-        if (stepper->dir_changed.mask && direction_ticks) {
+        if (direction_changed && direction_ticks) {
             pulse_phase = 1;
             schedule_pulse(direction_ticks);
         } else assert_pulse();
@@ -202,6 +210,8 @@ static void IRAM_ATTR cycles(uint32_t ticks)
     uint64_t now;
     gptimer_get_raw_count(step_timer, &now);
     if (running && now + 20 >= ticks) {
+        diag.deadline_kind = 1; diag.deadline_elapsed = now;
+        diag.deadline_period = ticks; diag.deadline_counter = tick_period;
         diag.late++;
         h5_motion_fault();
         return;
@@ -224,8 +234,11 @@ static bool IRAM_ATTR step_alarm(gptimer_handle_t timer, const gptimer_alarm_eve
     // period. A separate free-running clock detects that loss of timer service.
     bool missed = expected_alarm_interval && now - previous_alarm_time >
         expected_alarm_interval + expected_alarm_interval / 2;
+    uint32_t elapsed = now - previous_alarm_time;
     previous_alarm_time = now;
     if (missed || event->count_value > tick_period / 2) {
+        diag.deadline_kind = missed ? 2 : 3; diag.deadline_elapsed = elapsed;
+        diag.deadline_period = expected_alarm_interval; diag.deadline_counter = event->count_value;
         diag.late++;
         h5_motion_fault();
         return false;
@@ -239,6 +252,7 @@ static bool IRAM_ATTR step_alarm(gptimer_handle_t timer, const gptimer_alarm_eve
 }
 static void wake(void)
 {
+    if(h5_update_active() || !h5_ui_ready()) {h5_motion_fault();return;}
     if (fault || running) return;
     enable((axes_signals_t){AXES_BITMASK}, false);
     ESP_ERROR_CHECK(gptimer_set_raw_count(step_timer, 0));
@@ -277,6 +291,8 @@ static void realtime(sys_state_t state)
     h5_spindle_poll();
     h5_bridge_poll();
     h5_cycle_poll();
+    h5_network_poll();
+    h5_storage_poll();
     // Let the idle task and UART worker run while the core waits for input.
     // Pulse timing belongs solely to the hardware timers, never this delay.
     static uint32_t yielded;
@@ -292,8 +308,21 @@ static void settings_changed(settings_t *s, settings_changed_flags_t changed)
     direction_invert = s->steppers.dir_invert;
     if (pulse_timer && !running) steps_write(0);
 }
+extern void h5_tmc_init(void);
+extern bool h5_audio_ready(void);
+extern void h5_task_report(void);
+extern void h5_audio_tone(unsigned,unsigned);
+extern status_code_t h5_tmc_command(sys_state_t,char *);
 static status_code_t command(sys_state_t state, char *line)
 {
+    if(!strcmp(line,"P4TASKS")) {h5_task_report();return Status_OK;}
+    if(!strcmp(line,"P4AUDIO")) {hal.stream.write(h5_audio_ready()?"[P4AUDIO:READY]\r\n":"[P4AUDIO:UNAVAILABLE]\r\n");h5_audio_tone(1200,70);return Status_OK;}
+    status_code_t network_result=h5_network_command(state,line);
+    if(network_result!=Status_Unhandled)return network_result;
+    status_code_t storage_result=h5_storage_command(state,line);
+    if(storage_result!=Status_Unhandled)return storage_result;
+    status_code_t tmc_result=h5_tmc_command(state,line);
+    if(tmc_result!=Status_Unhandled)return tmc_result;
     status_code_t cycle_result = h5_cycle_command(state, line);
     if (cycle_result != Status_Unhandled) return cycle_result;
     status_code_t spindle_result = h5_spindle_command(state, line);
@@ -363,6 +392,13 @@ static status_code_t command(sys_state_t state, char *line)
         }
         return Status_OK;
     }
+    if (!strcmp(line, "P4DEADLINE")) {
+        char text[180];
+        snprintf(text, sizeof(text), "[P4DEADLINE:KIND:%lu|ELAPSED:%lu|PERIOD:%lu|COUNTER:%lu]\r\n",
+            (unsigned long)diag.deadline_kind, (unsigned long)diag.deadline_elapsed,
+            (unsigned long)diag.deadline_period, (unsigned long)diag.deadline_counter);
+        hal.stream.write(text); return Status_OK;
+    }
     if (strcmp(line, "P4") != 0) return previous_command ? previous_command(state, line) : Status_Unhandled;
     int x, z, encoder;
     h5_feedback_read(&x, &z, &encoder);
@@ -373,8 +409,8 @@ static status_code_t command(sys_state_t state, char *line)
     int32_t xpos = diag.x_position, zpos = diag.z_position;
     irq_enable();
     char text[480];
-    snprintf(text, sizeof(text), "[P4:BENCH|EN:LOCKED|NVS:RAM|SYNC:BENCH|X:%lu,%ld,%d|Z:%lu,%ld,%d|ENC:%d|ISR:%lu|OVERLAP:%lu|LATE:%lu|PERIOD:%lu,%lu|PULSE:%lu,%lu|ISR_US:%lu|RX_OVF:%u|FAULT:%u|ENABLE_PINS:%u,%u]\r\n",
-        (unsigned long)xp, (long)xpos, x, (unsigned long)zp, (long)zpos, z, encoder,
+    snprintf(text, sizeof(text), "[P4:BENCH|EN:LOCKED|NVS:%s|SYNC:BENCH|X:%lu,%ld,%d|Z:%lu,%ld,%d|ENC:%d|ISR:%lu|OVERLAP:%lu|LATE:%lu|PERIOD:%lu,%lu|PULSE:%lu,%lu|ISR_US:%lu|RX_OVF:%u|FAULT:%u|ENABLE_PINS:%u,%u]\r\n",
+        h5_storage_ready()?"FLASH":"RAM",        (unsigned long)xp, (long)xpos, x, (unsigned long)zp, (long)zpos, z, encoder,
         (unsigned long)n, (unsigned long)overlap, (unsigned long)late, (unsigned long)min, (unsigned long)max,
         (unsigned long)pmin, (unsigned long)pmax, (unsigned long)cost, h5_serial_overflows(), fault, gpio_get_level(H5_X_ENABLE), gpio_get_level(H5_Z_ENABLE));
     hal.stream.write(text);
@@ -382,6 +418,7 @@ static status_code_t command(sys_state_t state, char *line)
 }
 static status_code_t validate(modal_groups_t *commands, parser_state_t *state, parser_block_t *block, spindle_t *spindle)
 {
+    if(h5_update_active() || !h5_ui_ready())return Status_IdleError;
     // Core uses three-axis storage; an absent Y must not silently move virtually.
     if (block->words.y || block->words.v) {
         hal.stream.write("[MSG:P4 has no Y axis]\r\n");
@@ -392,13 +429,9 @@ static status_code_t validate(modal_groups_t *commands, parser_state_t *state, p
         hal.stream.write("[MSG:P4 arcs require G18]\r\n");
         return Status_GcodeUnsupportedCommand;
     }
-    // Upstream synchronization currently derives its correction speed limit
-    // from Z. Do not expose X/tapered threading or unvalidated G76 cycles yet.
-    if (block->modal.motion == MotionMode_Threading ||
-        (block->modal.motion == MotionMode_SpindleSynchronized && (block->words.x || block->words.u))) {
-        hal.stream.write("[MSG:P4 bench synchronization currently supports straight Z G33 only]\r\n");
-        return Status_GcodeUnsupportedCommand;
-    }
+    // G33 is path-distance/revolution; each participating axis is constrained.
+    // G76 remains a separate, unvalidated CNC recipe.
+    if (block->modal.motion == MotionMode_Threading) return Status_GcodeUnsupportedCommand;
     return Status_Unhandled;
 }
 static bool setup(settings_t *s)
@@ -427,6 +460,7 @@ static bool setup(settings_t *s)
     ESP_ERROR_CHECK(gptimer_enable(step_timer));
     ESP_ERROR_CHECK(gptimer_enable(pulse_timer));
     ESP_ERROR_CHECK(gptimer_start(pulse_timer));
+    h5_tmc_init();
     // Fail closed if this SDK/toolchain does not preserve interrupted FP state.
     if (!h5_fpu_test()) { h5_motion_fault(); return false; }
     return s->version.id == SETTINGS_VERSION;
@@ -462,7 +496,7 @@ bool driver_init(void)
     hal.coolant.set_state = coolant_set;
     hal.driver_cap.amass_level = 3;
     hal.driver_cap.step_pulse_delay = 1;
-    hal.nvs.type = NVS_None; // Core's RAM buffer; never touch H5 settings.
+    h5_storage_hal();
     previous_realtime = grbl.on_execute_realtime;
     grbl.on_execute_realtime = realtime;
     previous_settings = grbl.on_settings_changed;

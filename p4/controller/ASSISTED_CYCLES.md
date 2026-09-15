@@ -1,12 +1,9 @@
-# Assisted Turn and Thread cycles
+# Assisted cycle service
 
-This is the first assisted-cycle service on top of the validated straight-Z
-spindle backend. It implements **Turn** and **Thread**, including repeated
-radial infeed and multiple starts, in the disconnected, enable-locked bench
-application. Async feed and the existing jog controls remain available.
-Gearbox, Cone, Face, Cut and Ellipse remain required migration work; their START
-buttons remain unavailable until their motion semantics have been implemented
-and tested. This is not a completed migration of all eight operations.
+All eight operations now have implementations. This document describes the
+Turn/Thread geometry and records its earlier validation. See [OPERATIONS.md](OPERATIONS.md)
+for Face, Cut, Ellipse, Gearbox, Cone, Async, parameter edits and the current
+operating limits. See [PORT_PROGRESS.md](PORT_PROGRESS.md) for final regression status.
 
 ## Operator workflow
 
@@ -25,8 +22,8 @@ The preview is a real LVGL panel; its RUN button requests a copied configuration
 A second validation on the grbl task checks current position, controller state,
 RPM, and motion settings before moving. Active coordinate scaling or rotation
 is rejected; ordinary work offsets, metric/imperial and diameter modes cannot
-change the generated machine-coordinate path. Parameter changes cannot mutate a
-running recipe. Changing machining stops, disabling an axis, switching modes,
+change the generated machine-coordinate path. Recipes use a copied configuration; editing their motion parameters cancels
+the active recipe so the displayed settings cannot silently disagree with the cut. Changing machining stops, disabling an axis, switching modes,
 requesting firmware update or attempting to jog cancels the active cycle.
 
 ## Preserved and explicit geometry
@@ -92,9 +89,10 @@ remain required before connecting the machine or removing the enable lock.
 `cycle_plan.c` is pure geometry shared by preview and execution. `main/cycle.c`
 runs transitions only on the grbl task. It submits one line through the normal
 bridge/parser, waits for that exact command's acknowledgment, and then requires
-an empty planner and actual idle state before advancing. G33 acknowledgment
-already waits for the synchronized move to finish; acknowledgment of a rapid
-alone is not considered motion completion.
+an empty planner and actual idle state before advancing. Ellipse cutting chords
+are the exception: acknowledgments pipeline them into native lookahead, and
+only the last chord requires standstill. Neither G33 nor rapid acknowledgment
+alone is considered motion completion.
 
 While a cycle owns the command stream, ordinary UI moves and competing USB
 G-code/settings are rejected. They are not saved for execution after the cycle.
@@ -122,10 +120,10 @@ stage-order and pulse-total regressions cover the corrected behavior.
 The USB start command uses machine-mm coordinates:
 
 ```
-$P4CYCLE=thread,pitch,passes,starts,aux_forward,x_min,x_max,z_min,z_max,rpm_limit
+$P4CYCLE=operation,pitch,passes,starts,aux_forward,x_min,x_max,z_min,z_max,rpm_limit
 ```
 
-`thread` and `aux_forward` are 0/1. For example, on the disconnected simulator:
+`operation` is 0 Turn, 1 Thread, 2 Face, 3 Cut or 4 Ellipse; `aux_forward` is 0/1. For example, on the disconnected simulator:
 
 ```
 $P4SIM=300
@@ -169,7 +167,10 @@ exact stage order, infeed/end positions, total commanded travel and independent
 GPIO PCNT pulse counts. These are internal disconnected-bench measurements,
 not loaded machining or external waveform measurements.
 
-## Device results, 2026-09-14
+## Historical Turn/Thread device results, 2026-09-14
+
+These results describe the earlier app-only installation, before the OTA
+partition migration and additional services. They are not the current build.
 
 The app was built with the existing ESP-IDF 5.5.2 environment and installed
 app-only at `0x10000`, preserving the original bootloader, partition table and
@@ -215,12 +216,6 @@ Installed application SHA-256:
 
 ## Remaining work
 
-- Preserve Gearbox engagement/reversal/stop semantics and Cone coupling.
-- Validate synchronized X/tapered paths before enabling Face, Cut or Cone.
-- Implement Ellipse with its original spindle-progress and pass-scaling semantics.
-- Expose deliberate pass advance at the cycle API boundary; no mid-cut skip is
-  currently offered by this first service.
-- Complete Async manual override/resume semantics, persistent preferences,
-  TMC5160 SPI, sound, Wi-Fi and OTA migration.
-- Establish the physical machine envelope, inspect actual encoder/pulse signals,
-  and test loaded motion and thread entry/exit before enabling motor outputs.
+Current coverage and outstanding checks are maintained in
+[PORT_PROGRESS.md](PORT_PROGRESS.md). Physical encoder, wiring, drive and cutting
+validation remain mandatory before the enable lock can be removed.
