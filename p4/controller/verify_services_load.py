@@ -2,6 +2,7 @@
 """Coordinated GPIO motion while touchscreen, audio and hosted Wi-Fi are busy."""
 import socket,sys,threading,time
 from bench_client import Bench
+from diagnostics_log import snapshot
 b=Bench(sys.argv[1]);done=threading.Event();connections=[];failures=[];worker=None
 try:
     for _ in range(60):
@@ -9,6 +10,8 @@ try:
         if net['WIFI']=='1':break
         time.sleep(.5)
     assert net['WIFI']=='1' and net['P4OTA']=='ACTIVE:0',net
+    b.command('$P4DIAG=1')
+    time.sleep(.5)
     def network_load():
         while not done.is_set():
             try:
@@ -16,6 +19,9 @@ try:
                     s.settimeout(2)
                     response=s.recv(32)
                     if response!=b'DISABLED\n':raise RuntimeError(response)
+                    observation=snapshot(net['IP'],timeout=2)
+                    assert observation['motor_enables_locked'] and observation['sample_age_ms']<1000,observation
+                    assert observation['fault']==0 and observation['late']==0 and observation['overlap']==0,observation
                     connections.append(1)
             except Exception as error:failures.append(str(error))
             done.wait(.05)
@@ -36,7 +42,7 @@ try:
         assert z[0]-a[0]==total and z[1]==a[1],(axis,a,z)
     assert int(ui_after['UI_UPDATES'])-int(ui['UI_UPDATES'])>100
     assert len(connections)>50 and not failures,(len(connections),failures)
-    print(f'PASS: 19,200 X / 51,200 Z pulses exact with audio, UI updates and {len(connections)} Wi-Fi connections',flush=True)
+    print(f'PASS: 19,200 X / 51,200 Z pulses exact with audio, UI updates and {len(connections)} Wi-Fi connections plus HTTP diagnostics',flush=True)
 except BaseException:
     b.port.write(b'$P4\n$P4DEADLINE\n');end=time.monotonic()+2
     while time.monotonic()<end:

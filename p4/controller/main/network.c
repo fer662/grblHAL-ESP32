@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "network.h"
+#include "diagnostics_internal.h"
 #include "bridge.h"
 #include "esp_app_desc.h"
 #include "esp_app_format.h"
@@ -271,6 +272,12 @@ static void network_task(void *arg)
         return;
     }
     fcntl(listener, F_SETFL, O_NONBLOCK);
+    int observer = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+    address.sin_port = htons(8080);
+    if (observer >= 0 && (bind(observer, (struct sockaddr *)&address, sizeof(address)) || listen(observer, 2))) {
+        close(observer); observer = -1;
+    }
+    if (observer >= 0) fcntl(observer, F_SETFL, O_NONBLOCK);
     uint32_t last_retry = 0;
     for (;;) {
         if (atomic_exchange(&reconfigure, false)) {
@@ -295,6 +302,15 @@ static void network_task(void *arg)
             h5_update_snapshot(&s);
             if (!s.connected)
                 esp_wifi_connect();
+        }
+        int read_fd = observer >= 0 ? accept(observer, NULL, NULL) : -1;
+        if (read_fd >= 0) {
+            struct timeval read_timeout = {.tv_sec = 1};
+            setsockopt(read_fd, SOL_SOCKET, SO_RCVTIMEO, &read_timeout, sizeof(read_timeout));
+            setsockopt(read_fd, SOL_SOCKET, SO_SNDTIMEO, &read_timeout, sizeof(read_timeout));
+            h5_diagnostics_serve(read_fd);
+            shutdown(read_fd, SHUT_RDWR);
+            close(read_fd);
         }
         int fd = accept(listener, NULL, NULL);
         if (fd < 0) {
@@ -327,6 +343,7 @@ void h5_network_poll(void)
 {
     bool idle = state_get() == STATE_IDLE && h5_motion_idle() && !st_is_stepping() &&
                 !plan_get_current_block() && !h5_cycle_busy() && h5_bridge_empty() && !h5_serial_pending();
+    h5_diagnostics_poll(idle && !h5_update_active());
     uint32_t now = hal.get_elapsed_ticks();
     if (validation_pending && ((reject_validation && now > 5000) || now > 30000)) {
         message("Boot validation failed; rolling back");
@@ -376,6 +393,8 @@ void h5_network_poll(void)
 }
 status_code_t h5_network_command(sys_state_t state, char *line)
 {
+    if (!strcmp(line, "P4DIAG=1")) { h5_diagnostics_start(); return Status_OK; }
+    if (!strcmp(line, "P4DIAG=0")) { h5_diagnostics_stop(); return Status_OK; }
     if (!strcmp(line, "P4OTATEST=REJECT"))
         return h5_storage_reject_next_ota(true) ? Status_OK : Status_IdleError;
     if (!strcmp(line, "P4OTATEST=CLEAR"))

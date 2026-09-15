@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "bridge.h"
+#include "diagnostics_internal.h"
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
 #include "grbl/hal.h"
@@ -87,4 +88,20 @@ status_code_t h5_tmc_command(sys_state_t state, char *line)
              (unsigned long)driver.drv_status.reg.value);
     hal.stream.write(report);
     return Status_OK;
+}
+
+void h5_tmc_snapshot(h5_diagnostics_t *s, bool refresh)
+{
+    // Sole grbl task; caller only refreshes when the complete motion path is idle.
+    if (refresh && device) {
+        TMC5160_ReadRegister(&driver, (TMC5160_datagram_t *)&driver.ioin);
+        TMC5160_ReadRegister(&driver, (TMC5160_datagram_t *)&driver.drv_status);
+        TMC5160_ReadRegister(&driver, (TMC5160_datagram_t *)&driver.chopconf);
+    }
+    s->tmc_transport = device && transport_ok;
+    s->tmc_present = device && driver.ioin.reg.version == 0x30;
+    s->tmc_configured = configured;
+    s->tmc_ioin = driver.ioin.reg.value;
+    s->tmc_chopconf = driver.chopconf.reg.value;
+    s->tmc_status = driver.drv_status.reg.value;
 }

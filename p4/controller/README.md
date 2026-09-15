@@ -10,6 +10,9 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
 ## Current scope
 
+Live diagnostics and OTA are available over Wi-Fi; USB is not required at the
+lathe. See [wireless commissioning](WIRELESS_COMMISSIONING.md).
+
 - Real grblHAL G-code parser, planner, Bresenham/AMASS step generation,
   acceleration profiles, feed hold/resume, jog cancellation and reset handling.
 - X/Z STEP/DIR on the existing H5 pins; calibration 1200 / 200 steps per mm,
@@ -41,7 +44,9 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
   realtime commands are handled while the planner is busy. UART and software
   buffer errors cancel the command stream rather than executing truncated input.
 - Bench-only compile gate forces X enable HIGH and Z enable LOW. No command
-  or setting can energize drivers. Only use with the tablet disconnected.
+  or setting can energize drivers. Synthetic encoder/pulse stress tests require
+  the tablet disconnected. Real wiring checks follow the staged
+  [wireless commissioning procedure](WIRELESS_COMMISSIONING.md).
 - Core settings and UI preferences persist in a separate `h5_settings` NVS
   partition. Existing H5 NVS/storage is untouched. Positions, zeros and machining
   stops must be reestablished after reboot.

@@ -20,6 +20,7 @@ This is a disconnected Waveshare P4 bench build with X/Z enables hardlocked off.
 - [x] TMC5160 SPI configuration and missing-device/readback diagnostics.
 - [x] Separate persistent grbl/UI/Wi-Fi settings and asynchronous speaker service.
 - [x] Hosted Wi-Fi, authenticated dual-slot OTA, boot confirmation and rollback.
+- [x] Locally opened, read-only Wi-Fi diagnostics and computer-side log capture.
 - [x] Full flash backup and migration preserving original H5 NVS/storage addresses.
 
 See [OPERATIONS.md](OPERATIONS.md), [SPINDLE_TRACKING.md](SPINDLE_TRACKING.md)
@@ -78,7 +79,7 @@ Previous application version: `0.3.0`. Built image SHA-256:
 `346fc8c39bfa5aa6cb8935233cfd91417ac5628593090b9f65fadabb1ba8ff34`.
 Core pin: `f799fd0f284c25d592821f800452cba6fc1ea78a`.
 
-## 0.3.1 software acceptance
+## Previous 0.3.1 software acceptance
 
 **All 20 disconnected-device suites passed on the final image.** This includes
 native spindle/X/Z/ramp motion, concurrent services, hand following, powered
@@ -120,9 +121,46 @@ guarantee or external waveform acceptance**.
 
 Application version: `0.3.1`. Built and OTA-tested image SHA-256:
 `ecc4e9dfb1686635c90004b94afea01576753f06c193a090d56fdaf28a0df4f4`.
-The installed image is confirmed in `ota_0` (`0x210000`). The normal touchscreen
-is left idle with motor enables locked and the synthetic encoder stopped.
+That image was confirmed in `ota_0` (`0x210000`) and left idle with motor enables
+locked and the synthetic encoder stopped.
 Logs and the final screen capture remain in the private external backup directory.
+
+## 0.3.2 wireless diagnostics
+
+USB is not required for the hardware checks or future OTA installation. Tap the
+bottom status line to open Diagnostics, then use its IP from a computer on the
+same network. BACK returns to operation controls while the 30-minute read-only
+session continues. STOP SHARING closes access. See
+[WIRELESS_COMMISSIONING.md](WIRELESS_COMMISSIONING.md).
+
+Encoder, timing and fault observations are copied by the grbl task at up to 4 Hz;
+HTTP formatting/transmission stays on CPU 0. TMC register refresh is idle-only at
+most every two seconds. Both on-screen and remote samples report their age.
+The endpoint accepts no motion, simulation, configuration or firmware commands.
+No motor-enable gate or core planner code changed.
+
+The final 0.3.2 image built and installed over authenticated OTA. The automated
+read-only device test passed: actual local UI opening/back/closure events, fresh
+HTTP snapshots, rejected POST/command-like/oversized requests, fragmented
+requests, closure during a request, and unchanged zero step counts. Driver
+fault/overlap/deadline/receive counters remained zero. Python syntax and diff
+checks passed. This run did not repeat synthetic encoder or pulse-producing
+stress tests: the tablet's current attachment state was not reconfirmed.
+`verify_services_load.py` now includes HTTP observations alongside its existing
+motion/audio/UI load and remains to be run on the disconnected fixture.
+
+Application version: `0.3.2`. OTA image SHA-256:
+`642f5d8a4b593102a69c9e97ff88ee42335e75e03ae95fa2571876428a577752`.
+The selected partition is `ota_0`; the USB status check reported no pending boot
+validation. A 30-second Wi-Fi-only capture recorded 103 valid snapshots, zero
+connection errors and a maximum sample age of 247 ms, with no pulses or faults.
+The 1280x800 panel capture was visually checked; its initial Wi-Fi-disconnected
+message was captured before association, and the subsequent network log
+confirmed connectivity. The tablet was returned to the normal operation screen.
+Private logs: `diagnostics-032-final.log`, `ota-diagnostics-032-final.log`,
+`diagnostics-032-wireless.jsonl`, and `diagnostics-032-screen.png`.
+The earlier full 20-suite acceptance applies to 0.3.1, not automatically to this
+new diagnostic sampling/network workload. Hardware acceptance remains below.
 
 ## Hardware acceptance still required
 

@@ -42,3 +42,9 @@ void h5_critical_report(void)
         hal.stream.write(line);
     }
 }
+
+void h5_critical_snapshot(uint32_t values[2])
+{
+    for (unsigned core = 0; core < 2; core++)
+        values[core] = atomic_load_explicit(&maximum[core], memory_order_relaxed);
+}

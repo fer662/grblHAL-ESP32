@@ -12,6 +12,7 @@
 #include "hal/gpio_ll.h"
 #include "esp_timer.h"
 #include "spindle.h"
+#include "diagnostics_internal.h"
 #include "follow.h"
 #include "grbl/protocol.h"
 #include "grbl/report.h"
@@ -354,4 +355,11 @@ status_code_t h5_spindle_command(sys_state_t state, char *line)
         return Status_OK;
     }
     return Status_Unhandled;
+}
+
+void h5_spindle_snapshot(h5_diagnostics_t *s)
+{
+    s->encoder = position(); s->rpm = measured_rpm;
+    s->tracking = tracking; s->waiting = waiting; s->simulated = h5_spindle_simulator_active();
+    strncpy(s->sync_fault, sync_fault, sizeof(s->sync_fault) - 1);
 }

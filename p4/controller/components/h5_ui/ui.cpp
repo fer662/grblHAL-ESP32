@@ -5,6 +5,7 @@
 #include "follow.h"
 #include "preferences.h"
 #include "update.h"
+#include "diagnostics.h"
 #include "Buzzer.h"
 #include "display.h"
 #include "StateMachine.h"
@@ -30,6 +31,8 @@ static std::atomic<bool> ui_ready{false};
 static std::atomic<uint32_t> ui_updates{0};
 static QueueHandle_t test_actions;
 static lv_obj_t *status_label, *update_label, *update_close, *update_panel, *cycle_panel, *cycle_run;
+static lv_obj_t *diagnostics_panel, *diagnostics_label, *diagnostics_back, *diagnostics_stop;
+static void show_diagnostics();
 static h5_cycle_config_t preview_config;
 static bool cycle_selected;
 static String notice;
@@ -263,9 +266,33 @@ void h5_ui_sync()
         snprintf(text,sizeof(text),"Firmware update\n\n%s\nIP: %s | Progress: %u%%\nPairing key: %s\n\nUse ota_upload.py with the application .bin file.\nClosing this window leaves an active upload running.",update.message,update.connected?update.ip:"Wi-Fi not connected",update.percent,update.active?update.key:"Open update mode to pair");
         lv_label_set_text(update_label,text);
     }
+    if (diagnostics_label && !lv_obj_has_flag(diagnostics_panel, LV_OBJ_FLAG_HIDDEN)) {
+        h5_diagnostics_t d; h5_diagnostics_snapshot(&d);
+        h5_update_status_t net; h5_update_snapshot(&net);
+        char text[900];
+        snprintf(text,sizeof(text),
+            "Diagnostics | %s | Motor enables locked\n"
+            "Wi-Fi: %s\nhttp://%s:8080/diagnostics\n"
+            "Encoder: %lld counts | %.2f RPM | %s\n"
+            "Steps X: %lu / %ld   Z: %lu / %ld (issued / counted)\n"
+            "Motion fault: %u | Sync: %s | Late: %lu | Overlap: %lu\n"
+            "TMC5160: %s | Configured: %u | IOIN: %08lx\n"
+            "CHOPCONF: %08lx | DRV_STATUS: %08lx\n"
+            "Sample age: %lu ms | TMC read age: %lu ms\n"
+            "Read-only access on this Wi-Fi for 30 minutes.\n"
+            "BACK keeps logging available; STOP closes access.",
+            h5_diagnostics_active()?"sharing":"sharing stopped", net.connected?"connected":"disconnected",
+            net.connected?net.ip:"waiting-for-wifi", (long long)d.encoder, (double)d.rpm,
+            d.simulated?"SIMULATED":"real encoder", (unsigned long)d.x_pulses,(long)d.x_counted,
+            (unsigned long)d.z_pulses,(long)d.z_counted,d.fault,d.sync_fault,
+            (unsigned long)d.late,(unsigned long)d.overlap,d.tmc_present?"present":"missing",
+            d.tmc_configured,(unsigned long)d.tmc_ioin,(unsigned long)d.tmc_chopconf,(unsigned long)d.tmc_status,
+            (unsigned long)((uint32_t)millis()-d.sampled_ms),(unsigned long)((uint32_t)millis()-d.tmc_sampled_ms));
+        lv_label_set_text(diagnostics_label,text);
+    }
     if (status_label) {
         String text = status.ready ? status.state : "Starting controller";
-        text += "  |  Motor outputs disabled";
+        text += "  |  Motor outputs disabled  |  Tap for diagnostics";
         if (!notice.empty()) text += "\n" + notice;
         lv_label_set_text(status_label, text.c_str());
     }
@@ -282,7 +309,7 @@ void h5_ui_show_update()
         lv_obj_center(update_panel);
         lv_obj_t *label = update_label = lv_label_create(update_panel);
         lv_obj_set_width(label, 940);
-        lv_label_set_text(label, "Firmware update\n\nUSB installation is available.\nWireless updates will be enabled after the OTA partition migration.");
+        lv_label_set_text(label, "Firmware update\n\nPreparing wireless update mode...");
         lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 15);
         lv_obj_t *close = update_close = lv_btn_create(update_panel);
         lv_obj_set_size(close, 160, 55);
@@ -292,6 +319,35 @@ void h5_ui_show_update()
     }
     lv_obj_clear_flag(update_panel, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(update_panel);
+}
+static void show_diagnostics()
+{
+    h5_diagnostics_start();
+    if (!diagnostics_panel) {
+        diagnostics_panel=lv_obj_create(lv_scr_act());
+        lv_obj_set_size(diagnostics_panel,1080,610);
+        lv_obj_center(diagnostics_panel);
+        lv_obj_set_style_text_font(diagnostics_panel,LV_FONT_BIG,0);
+        diagnostics_label=lv_label_create(diagnostics_panel);
+        lv_obj_set_width(diagnostics_label,1020);
+        lv_obj_align(diagnostics_label,LV_ALIGN_TOP_MID,0,5);
+        diagnostics_back=lv_btn_create(diagnostics_panel);
+        lv_obj_set_size(diagnostics_back,220,55);
+        lv_obj_align(diagnostics_back,LV_ALIGN_BOTTOM_LEFT,20,-5);
+        lv_obj_t *label=lv_label_create(diagnostics_back);lv_label_set_text(label,"BACK");lv_obj_center(label);
+        lv_obj_add_event_cb(diagnostics_back,[](lv_event_t *) {
+            lv_obj_add_flag(diagnostics_panel,LV_OBJ_FLAG_HIDDEN);
+        },LV_EVENT_CLICKED,nullptr);
+        diagnostics_stop=lv_btn_create(diagnostics_panel);
+        lv_obj_set_size(diagnostics_stop,220,55);
+        lv_obj_align(diagnostics_stop,LV_ALIGN_BOTTOM_RIGHT,-20,-5);
+        label=lv_label_create(diagnostics_stop);lv_label_set_text(label,"STOP SHARING");lv_obj_center(label);
+        lv_obj_add_event_cb(diagnostics_stop,[](lv_event_t *) {
+            h5_diagnostics_stop();lv_obj_add_flag(diagnostics_panel,LV_OBJ_FLAG_HIDDEN);
+        },LV_EVENT_CLICKED,nullptr);
+    }
+    lv_obj_clear_flag(diagnostics_panel,LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(diagnostics_panel);
 }
 static void ui_task(void *)
 {
@@ -311,6 +367,8 @@ static void ui_task(void *)
     lv_obj_set_style_text_align(status_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(status_label, 1000);
     lv_obj_align(status_label, LV_ALIGN_BOTTOM_MID, 0, -15);
+    lv_obj_add_flag(status_label,LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(status_label,[](lv_event_t *) { show_diagnostics(); },LV_EVENT_CLICKED,nullptr);
     h5_ui_sync();
     bsp_display_unlock();
     bsp_display_backlight_on();
@@ -342,6 +400,9 @@ static void ui_task(void *)
                 measure=MEASURE_METRIC;pitchType=PITCH_TYPE_MM_PER_TURN;moveStep=MOVE_STEP_1;buzzerEnabled=true;
                 x.leftStop=z.leftStop=LONG_MAX;x.rightStop=z.rightStop=LONG_MIN;continue;
             }
+            if(action=='V') {lv_event_send(status_label,LV_EVENT_CLICKED,nullptr);continue;}
+            if(action=='B' && diagnostics_back) {lv_event_send(diagnostics_back,LV_EVENT_CLICKED,nullptr);continue;}
+            if(action=='W' && diagnostics_stop) {lv_event_send(diagnostics_stop,LV_EVENT_CLICKED,nullptr);continue;}
             if(action=='U') {h5_ui_show_update();continue;}
             if(action=='Q' && update_close) {lv_event_send(update_close,LV_EVENT_CLICKED,nullptr);continue;}
             if (action=='7' && cycle_panel) lv_event_send(cycle_run,LV_EVENT_CLICKED,nullptr);
@@ -370,7 +431,7 @@ extern "C" bool h5_ui_ready(void) { return ui_ready.load() && h5_audio_initializ
 extern "C" uint32_t h5_ui_updates(void) { return ui_updates.load(std::memory_order_relaxed); }
 extern "C" bool h5_ui_test_action(char action)
 {
-    return ui_ready.load() && strchr("123405678FCEGKAUDQR+N", action) && xQueueSend(test_actions, &action, 0) == pdTRUE;
+    return ui_ready.load() && strchr("123405678FCEGKAUDQR+NVBW", action) && xQueueSend(test_actions, &action, 0) == pdTRUE;
 }
 extern "C" bool h5_ui_screenshot(void (*write)(const char *))
 {

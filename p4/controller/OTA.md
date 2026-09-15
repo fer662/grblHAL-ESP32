@@ -103,3 +103,10 @@ do not publish those responses or private settings partition dumps.
 Run only on the disconnected, enable-locked tablet. Boot checks keep USB open
 across reboot so they verify which partitions actually execute, then wait for
 peripheral readiness; upload acceptance alone is not treated as successful boot.
+
+## Working at the lathe without USB
+
+The touchscreen supplies the update IP and temporary pairing key. Live encoder,
+timing and TMC diagnostics use a separate read-only service so observation does
+not acquire update mode or stop operation. See
+[wireless commissioning](WIRELESS_COMMISSIONING.md).

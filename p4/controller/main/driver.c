@@ -28,6 +28,7 @@
 #include "storage.h"
 #include "network.h"
 #include "update.h"
+#include "diagnostics_internal.h"
 
 #if !H5_BENCH_ONLY
 #error "Machine output enable requires the remaining hardware acceptance gates."
@@ -421,6 +422,22 @@ static status_code_t command(sys_state_t state, char *line)
         (unsigned long)pmin, (unsigned long)pmax, (unsigned long)cost, h5_serial_overflows(), fault, gpio_get_level(H5_X_ENABLE), gpio_get_level(H5_Z_ENABLE));
     hal.stream.write(text);
     return Status_OK;
+}
+void h5_driver_snapshot(h5_diagnostics_t *s)
+{
+    // Grbl task only. Copy IRQ-owned scalars together; format on CPU 0.
+    int x_counted, z_counted, encoder;
+    h5_feedback_read(&x_counted, &z_counted, &encoder);
+    s->x_counted = x_counted; s->z_counted = z_counted;
+    irq_disable();
+    s->x_pulses = diag.x_pulses; s->z_pulses = diag.z_pulses;
+    s->isr_us = diag.max_isr_us;
+    s->pulse_min = diag.pulse_min; s->pulse_max = diag.pulse_max;
+    s->late = diag.late; s->overlap = diag.overlaps; s->fault = fault;
+    s->deadline_kind = diag.deadline_kind; s->deadline_elapsed = diag.deadline_elapsed;
+    s->deadline_period = diag.deadline_period; s->deadline_counter = diag.deadline_counter;
+    irq_enable();
+    s->enable_x = gpio_get_level(H5_X_ENABLE); s->enable_z = gpio_get_level(H5_Z_ENABLE);
 }
 static status_code_t validate(modal_groups_t *commands, parser_state_t *state, parser_block_t *block, spindle_t *spindle)
 {
