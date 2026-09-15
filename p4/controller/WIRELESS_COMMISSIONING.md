@@ -1,5 +1,25 @@
 # Checking the lathe without USB
 
+## Current motor-control build
+
+The operator requested normal axis controls in the main application. Firmware
+0.3.3 therefore enables X/Z through the existing touchscreen, without a separate
+commissioning mode, arming screen or reduced-speed settings. The first physical
+movement will be Z only with the carriage disengaged from the leadscrew and the
+spindle motor stopped. X controls are also enabled in the firmware; leave them
+untouched for this first test. Normal idle-hold behavior can energize both motors.
+The encoder simulator and GPIO-driving encoder self-test are compiled out.
+
+Start with the smallest finite jog increment, one tap of a Z direction, then
+stop and report whether the motor turned, in which direction, and whether it
+sounded smooth. Reopen Diagnostics to compare issued/counted pulses and faults.
+No remote motion command is provided by the diagnostics endpoint. Scope/logic
+analyzer checks remain outstanding; they are not a prerequisite imposed on this
+operator-authorized unloaded functional test.
+
+The sequence below records the original electrical acceptance plan; hand-turned
+encoder count/reversal and TMC initialization/readback have since passed.
+
 USB is not required at the lathe. Firmware 0.3.2 adds a read-only diagnostics
 service alongside the existing wireless firmware updater. Both use the tablet's
 saved Wi-Fi network. The computer must be able to reach the tablet on that network.
@@ -53,9 +73,9 @@ GPIO counters do not establish electrical quality at the driver input.
   logic analyzer. The instrument need not connect to the tablet's USB port.
   Any pulse-producing test is a separate deliberate local operation; HTTP
   diagnostics alone generates no pulses.
-- Only after these checks should a separate motor-enabled firmware be prepared
-  for controlled unloaded and then loaded operation checks. This version retains
-  the compile-time enable lock; Wi-Fi access does not remove it.
+- The operator chose to begin unloaded Z movement using normal firmware before
+  scope measurement. Keep loaded behavior, actual current and external waveforms
+  as separate unverified items; an unloaded motor turning does not validate them.
 
 The last steps still require an operator at the lathe. This service provides
 remote observation; it does not prove wiring or loaded mechanical behavior.

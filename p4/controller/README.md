@@ -10,6 +10,11 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
 ## Current scope
 
+**0.3.3 enables the existing X/Z axis controls in the normal application.**
+There is no separate arming or motor-test UI. The operator selected a first
+Z-only movement test with the carriage disengaged from the leadscrew, ahead of
+external waveform measurement. This does not establish loaded-machine acceptance.
+
 Live diagnostics and OTA are available over Wi-Fi; USB is not required at the
 lathe. See [wireless commissioning](WIRELESS_COMMISSIONING.md).
 
@@ -43,10 +48,13 @@ lathe. See [wireless commissioning](WIRELESS_COMMISSIONING.md).
 - UART0 via the tablet's USB bridge. A single grbl task owns command input;
   realtime commands are handled while the planner is busy. UART and software
   buffer errors cancel the command stream rather than executing truncated input.
-- Bench-only compile gate forces X enable HIGH and Z enable LOW. No command
-  or setting can energize drivers. Synthetic encoder/pulse stress tests require
-  the tablet disconnected. Real wiring checks follow the staged
-  [wireless commissioning procedure](WIRELESS_COMMISSIONING.md).
+- Normal grblHAL motor-enable control, with the existing inversion settings
+  (X active low, Z active high) and idle-hold behavior. Startup, update mode and
+  latched driver faults inhibit enables. The normal build excludes the encoder
+  simulator, GPIO encoder self-test and deliberate interrupt-stall test.
+  An explicit `-DH5_BENCH_ONLY=ON` CMake build retains the disconnected fixture;
+  all pulse-producing bench scripts require that build and a disconnected tablet.
+  See [wireless commissioning](WIRELESS_COMMISSIONING.md).
 - Core settings and UI preferences persist in a separate `h5_settings` NVS
   partition. Existing H5 NVS/storage is untouched. Positions, zeros and machining
   stops must be reestablished after reboot.
@@ -74,7 +82,7 @@ lathe. See [wireless commissioning](WIRELESS_COMMISSIONING.md).
 
 **Not ready to run the lathe yet:** synthetic encoder and internal GPIO tests
 cannot validate ribbon wiring, actual motor movement, physical clearance or
-cutting behavior. Motor enables remain locked inactive. All eight operations
+cutting behavior. The normal build now permits motor operation. All eight operations
 are implemented; the remaining regression and hardware gates are tracked in
 [port progress](PORT_PROGRESS.md). The power/battery investigation is deferred.
 
@@ -196,8 +204,8 @@ passed 13 ramp/phase cases, the motion suite, the nine-cut steady spindle suite,
 all three fault tests and USB/UI regressions. Peak encoder-equivalent phase
 error was 0.0075 mm in the evaluated cutting windows; all 104,000 Z pulses in
 the tracking suite matched PCNT counts. See [SPINDLE_TRACKING.md](SPINDLE_TRACKING.md)
-for the acceleration measurements, assumptions and remaining limits. Motor
-enables remain locked.
+for the acceleration measurements, assumptions and remaining limits. Those
+historical runs used locked motor enables.
 
 ## Remaining port sequence
 
@@ -205,6 +213,26 @@ See [PORT_PROGRESS.md](PORT_PROGRESS.md) for current implementation, final
 regression status and the hardware checks that require the actual lathe.
 Historical measurements below and in linked validation documents are identified
 by their firmware stage; they do not certify later builds.
+
+## Build selection
+
+Normal application (axis controls enabled):
+
+```sh
+idf.py -C p4/controller -DH5_BENCH_ONLY=OFF build
+```
+
+Disconnected bench fixture only (enables locked, synthetic encoder available):
+
+```sh
+idf.py -C p4/controller -B build-bench -DH5_BENCH_ONLY=ON build
+```
+
+Check the selected build and device `$I` identity before any pulse-producing
+bench script. The `verify_*.py` motion suites are not connected-lathe procedures.
+The host-only `tests/enable_outputs_test.py` checks the actual driver's enable
+callback for axis masks, inversion, idle-hold requests, startup inhibition, fault
+shutdown and the bench compile gate without accessing hardware.
 
 ## Upstream updates
 

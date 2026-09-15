@@ -36,6 +36,7 @@ enum { H5_OWNER_PROFILE=1, H5_OWNER_FOLLOW=2, H5_OWNER_UPDATE=3 };
 bool h5_operation_claim(unsigned owner);
 void h5_operation_release(unsigned owner);
 bool h5_motion_idle(void);
+bool h5_motor_controls_enabled(void); // Build capability, not the instantaneous enable pin state.
 void h5_bridge_init(void);
 void h5_bridge_flush(void); // grbl task only; discard requests on stream reset
 void h5_bridge_poll(void); // grbl task only

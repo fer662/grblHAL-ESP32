@@ -177,9 +177,7 @@ void IRAM_ATTR h5_spindle_edge(axes_signals_t steps)
 
 // Bench generator: real A/B GPIO transitions counted by the existing PCNT unit.
 // It never commands STEP/DIR and is only available behind H5_BENCH_ONLY.
-#if !H5_BENCH_ONLY
-#error "Remove the synthetic encoder before enabling machine outputs."
-#endif
+#if H5_BENCH_ONLY
 static gptimer_handle_t simulator;
 static volatile unsigned gray_phase;
 static volatile int sim_direction = 1;
@@ -243,6 +241,10 @@ static bool simulate(float rpm)
     }
     return true;
 }
+#else
+static const float sim_rpm = 0;
+bool h5_spindle_simulator_active(void) { return false; }
+#endif
 void h5_spindle_poll(void)
 {
     if (!ready) return;
@@ -269,6 +271,7 @@ void h5_spindle_poll(void)
             else if (furthest - oriented > 3) { sync_fault = "REVERSED"; h5_motion_fault(); }
         }
     }
+    #if H5_BENCH_ONLY
     if (change_pending && (int32_t)(now - change_at) >= 0) {
         change_pending = false;
         simulate(next_rpm);
@@ -280,6 +283,7 @@ void h5_spindle_poll(void)
         if (change >= distance) { simulate(ramp_to); ramp_pending = false; }
         else simulate(ramp_from + copysignf(change, ramp_to - ramp_from));
     }
+    #endif
     // Core's index wait calls this hook but does not service '?' itself.
     if (waiting && (sys.rt_exec_state & EXEC_STATUS_REPORT)) {
         system_clear_exec_state_flag(EXEC_STATUS_REPORT);
@@ -306,6 +310,7 @@ status_code_t h5_spindle_command(sys_state_t state, char *line)
         }
         return Status_OK;
     }
+    #if H5_BENCH_ONLY
     if (!strncmp(line, "P4SIM=", 6)) {
         if (state != STATE_IDLE) return Status_IdleError;
         if (!strcmp(line + 6, "OFF")) {
@@ -347,6 +352,7 @@ status_code_t h5_spindle_command(sys_state_t state, char *line)
         ramp_at = hal.get_elapsed_ticks() + delay; ramp_pending = true;
         return Status_OK;
     }
+    #endif
     if (!strncmp(line, "P4PHASE=", 8)) {
         if (state != STATE_IDLE) return Status_IdleError;
         char *end; long value = strtol(line + 8, &end, 10);

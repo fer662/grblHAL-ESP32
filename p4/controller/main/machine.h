@@ -19,9 +19,16 @@
 #define DEFAULT_ENABLE_SIGNALS_INVERT_MASK 1
 #define DEFAULT_DIR_SIGNALS_INVERT_MASK 4 // H5 positive direction: X low, Z high
 #define DEFAULT_STEP_SIGNALS_INVERT_MASK 0
+// Default application controls the real drives. An explicit bench build can
+// still disable enables and include the disconnected-fixture diagnostics.
+#ifndef H5_BENCH_ONLY
+#define H5_BENCH_ONLY 0
+#endif
+#if H5_BENCH_ONLY
 #define BUILD_INFO "H5_P4_BENCH_MOTOR_ENABLES_LOCKED"
-// Deliberate compile-time gate: this port is not yet a machine-ready controller.
-#define H5_BENCH_ONLY 1
+#else
+#define BUILD_INFO "H5_P4_AXIS_CONTROLS_ENABLED"
+#endif
 #define H5_STEP_HZ 10000000UL
 #define H5_X_STEP 49
 #define H5_X_DIR 31

@@ -45,6 +45,7 @@ void h5_feedback_read(int *x_pulses, int *z_pulses, int *encoder)
     ESP_ERROR_CHECK(pcnt_unit_get_count(spindle_counter, encoder));
 }
 
+#if H5_BENCH_ONLY
 static void encoder_edge(int pin, int level)
 {
     gpio_set_level(pin, level);
@@ -88,6 +89,7 @@ bool h5_feedback_selftest(void)
     return forward - start == 32000 && reverse - start == -32000 && final == start;
 }
 
+#endif
 int32_t IRAM_ATTR h5_encoder_count(void)
 {
     int count = 0;

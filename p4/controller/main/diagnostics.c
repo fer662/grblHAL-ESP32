@@ -102,7 +102,7 @@ void h5_diagnostics_serve(int fd)
     snprintf(body, sizeof(body),
         "{\n  \"version\":\"%s\",\"partition\":\"%s\",\"uptime_ms\":%lu,\"sample_age_ms\":%lu,"
         "\"ready\":%u,\"state\":\"%s\",\"alarm\":%d,\n"
-        "  \"motor_enables_locked\":true,\"enable_pins\":[%u,%u],\"position_steps_xz\":[%ld,%ld],\n"
+        "  \"motor_enables_locked\":%s,\"enable_pins\":[%u,%u],\"position_steps_xz\":[%ld,%ld],\n"
         "  \"encoder_counts\":%lld,\"encoder_cpr\":1200,\"rpm\":%.3f,\"simulated\":%u,"
         "\"tracking\":%u,\"waiting_index\":%u,\"sync_fault\":\"%s\",\n"
         "  \"issued_steps_xz\":[%lu,%lu],\"counted_steps_xz\":[%ld,%ld],"
@@ -115,7 +115,7 @@ void h5_diagnostics_serve(int fd)
         "\"current_ma\":1700,\"microsteps\":2,\"rsense_mohm\":75}\n}\n",
         esp_app_get_description()->version, esp_ota_get_running_partition()->label,
         (unsigned long)now_ms(), (unsigned long)(now_ms() - s.sampled_ms), state.ready, state.state, state.alarm,
-        s.enable_x, s.enable_z, (long)state.position[0], (long)state.position[2],
+        h5_motor_controls_enabled()?"false":"true", s.enable_x, s.enable_z, (long)state.position[0], (long)state.position[2],
         (long long)s.encoder, (double)s.rpm, s.simulated, s.tracking, s.waiting, s.sync_fault,
         (unsigned long)s.x_pulses, (unsigned long)s.z_pulses, (long)s.x_counted, (long)s.z_counted,
         s.fault, (unsigned long)s.late, (unsigned long)s.overlap, (unsigned long)s.isr_us,

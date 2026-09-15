@@ -16,7 +16,7 @@ void app_main(void)
     // UART0 carries the grbl protocol. Concurrent SDK logs would corrupt it.
     esp_log_level_set("*", ESP_LOG_NONE);
     h5_storage_init();
-    ESP_LOGI("H5_P4", "grblHAL bench build: driver enables locked inactive");
+    ESP_LOGI("H5_P4", "grblHAL: %s", H5_BENCH_ONLY ? "bench enables locked" : "axis controls enabled");
     h5_network_start();
     configASSERT(xTaskCreatePinnedToCore(controller, "grblHAL", 16384, NULL, 5, NULL, 1) == pdPASS);
     h5_ui_start();

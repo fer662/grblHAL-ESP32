@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * P4-specific HAL. Upstream grblHAL owns planning, interpolation and state.
- * Bench build: actual STEP/DIR signals, but motor enables always inactive.
+ * Normal grblHAL enable control; optional disconnected-bench compile gate.
  */
 #include "freertos/FreeRTOS.h"
 #include "critical.h"
@@ -30,9 +30,6 @@
 #include "update.h"
 #include "diagnostics_internal.h"
 
-#if !H5_BENCH_ONLY
-#error "Machine output enable requires the remaining hardware acceptance gates."
-#endif
 
 static gptimer_handle_t step_timer, pulse_timer;
 static esp_ldo_channel_handle_t io_ldo;
@@ -42,6 +39,9 @@ static on_settings_changed_ptr previous_settings;
 static on_unknown_sys_command_ptr previous_command;
 static delay_callback_ptr delayed_callback;
 static volatile bool running, fault;
+static volatile bool outputs_ready;
+static axes_signals_t enable_invert = {.mask = DEFAULT_ENABLE_SIGNALS_INVERT_MASK};
+bool h5_motor_controls_enabled(void) { return !H5_BENCH_ONLY; }
 static volatile unsigned pulse_phase; // 0 idle, 1 direction setup, 2 pulse high, 3 hold
 bool h5_motion_idle(void) {return !running && !pulse_phase;}
 static bool reset_after_pulse;
@@ -91,9 +91,16 @@ static void IRAM_ATTR steps_write(uint8_t mask)
 }
 static void IRAM_ATTR enable(axes_signals_t axes, bool hold)
 {
-    // Cannot be bypassed by $X, settings, G-code, or a software reset.
-    gpio_ll_set_level(&GPIO, H5_X_ENABLE, 1);
-    gpio_ll_set_level(&GPIO, H5_Z_ENABLE, 0);
+    irq_disable();
+    if (H5_BENCH_ONLY || fault || !outputs_ready) {
+        gpio_ll_set_level(&GPIO, H5_X_ENABLE, 1);
+        gpio_ll_set_level(&GPIO, H5_Z_ENABLE, 0);
+    } else {
+        axes.mask ^= enable_invert.mask;
+        gpio_ll_set_level(&GPIO, H5_X_ENABLE, axes.x);
+        gpio_ll_set_level(&GPIO, H5_Z_ENABLE, axes.z);
+    }
+    irq_enable();
 }
 static void IRAM_ATTR reset_direction(void)
 {
@@ -256,6 +263,7 @@ static void wake(void)
 {
     if(h5_update_active() || !h5_ui_ready()) {h5_motion_fault();return;}
     if (fault || running) return;
+    outputs_ready = true; // wake has just checked UI/startup and update readiness.
     h5_critical_reset();
     enable((axes_signals_t){AXES_BITMASK}, false);
     ESP_ERROR_CHECK(gptimer_set_raw_count(step_timer, 0));
@@ -296,6 +304,8 @@ static void realtime(sys_state_t state)
     h5_cycle_poll();
     h5_network_poll();
     h5_storage_poll();
+    outputs_ready = h5_ui_ready() && !h5_update_active() && !fault;
+    if (!outputs_ready) enable((axes_signals_t){0}, false);
     // Let the idle task and UART worker run while the core waits for input.
     // Pulse timing belongs solely to the hardware timers, never this delay.
     static uint32_t yielded;
@@ -307,6 +317,7 @@ static void settings_changed(settings_t *s, settings_changed_flags_t changed)
     if (previous_settings) previous_settings(s, changed);
     pulse_ticks = (uint32_t)ceilf(fmaxf(2.0f, s->steppers.pulse_microseconds) * 10.0f);
     direction_ticks = (uint32_t)ceilf(fmaxf(5.0f, s->steppers.pulse_delay_microseconds) * 10.0f);
+    enable_invert = s->steppers.enable_invert;
     step_invert = s->steppers.step_invert;
     direction_invert = s->steppers.dir_invert;
     if (pulse_timer && !running) steps_write(0);
@@ -336,6 +347,7 @@ static status_code_t command(sys_state_t state, char *line)
         hal.stream.write(ok ? "[P4FPUTEST:PASS|REGISTERS:32|FCSR:PRESERVED|IRQS:1000]\r\n" : "[P4FPUTEST:FAIL]\r\n");
         return ok ? Status_OK : Status_SelfTestFailed;
     }
+    #if H5_BENCH_ONLY
     if (strcmp(line, "P4IRQTEST") == 0) {
         if (state != STATE_CYCLE || !running) return Status_IdleError;
         // Deliberate timing violation, only in this enable-locked bench image.
@@ -345,6 +357,7 @@ static status_code_t command(sys_state_t state, char *line)
         irq_enable();
         return Status_OK;
     }
+    #endif
     if (strcmp(line, "P4UI") == 0) {
         h5_status_t snapshot;
         h5_bridge_snapshot(&snapshot);
@@ -357,6 +370,7 @@ static status_code_t command(sys_state_t state, char *line)
         return Status_OK;
     }
     if (strncmp(line, "P4UITEST=", 9) == 0) {
+        if (!H5_BENCH_ONLY && (strlen(line) != 10 || !strchr("VBWUQ", line[9]))) return Status_InvalidStatement;
         if (strlen(line) != 10) return Status_InvalidStatement;
         return h5_ui_test_action(line[9]) ? Status_OK : Status_InvalidStatement;
     }
@@ -364,12 +378,14 @@ static status_code_t command(sys_state_t state, char *line)
         if (state != STATE_IDLE || running || pulse_phase) return Status_IdleError;
         return h5_ui_screenshot(hal.stream.write) ? Status_OK : Status_SelfTestFailed;
     }
+    #if H5_BENCH_ONLY
     if (strcmp(line, "P4ENCODERTEST") == 0) {
         if (state != STATE_IDLE || running || pulse_phase || h5_spindle_simulator_active()) return Status_IdleError;
         bool ok = h5_feedback_selftest();
         hal.stream.write(ok ? "[P4ENCODERTEST:PASS|COUNTS:32000,-32000,0]\r\n" : "[P4ENCODERTEST:FAIL]\r\n");
         return ok ? Status_OK : Status_SelfTestFailed;
     }
+    #endif
     if (strcmp(line, "P4TRACE=RESET") == 0) {
         if (state != STATE_IDLE || running || pulse_phase) return Status_IdleError;
         memset(&trace_x, 0, sizeof(trace_x));
@@ -416,8 +432,9 @@ static status_code_t command(sys_state_t state, char *line)
     int32_t xpos = diag.x_position, zpos = diag.z_position;
     irq_enable();
     char text[480];
-    snprintf(text, sizeof(text), "[P4:BENCH|EN:LOCKED|NVS:%s|SYNC:BENCH|X:%lu,%ld,%d|Z:%lu,%ld,%d|ENC:%d|ISR:%lu|OVERLAP:%lu|LATE:%lu|PERIOD:%lu,%lu|PULSE:%lu,%lu|ISR_US:%lu|RX_OVF:%u|FAULT:%u|ENABLE_PINS:%u,%u]\r\n",
-        h5_storage_ready()?"FLASH":"RAM",        (unsigned long)xp, (long)xpos, x, (unsigned long)zp, (long)zpos, z, encoder,
+    snprintf(text, sizeof(text), "[P4:%s|EN:%s|NVS:%s|SYNC:%s|X:%lu,%ld,%d|Z:%lu,%ld,%d|ENC:%d|ISR:%lu|OVERLAP:%lu|LATE:%lu|PERIOD:%lu,%lu|PULSE:%lu,%lu|ISR_US:%lu|RX_OVF:%u|FAULT:%u|ENABLE_PINS:%u,%u]\r\n",
+        H5_BENCH_ONLY?"BENCH":"MACHINE", H5_BENCH_ONLY?"LOCKED":"CONTROLLED",
+        h5_storage_ready()?"FLASH":"RAM", H5_BENCH_ONLY?"BENCH":"ENCODER", (unsigned long)xp, (long)xpos, x, (unsigned long)zp, (long)zpos, z, encoder,
         (unsigned long)n, (unsigned long)overlap, (unsigned long)late, (unsigned long)min, (unsigned long)max,
         (unsigned long)pmin, (unsigned long)pmax, (unsigned long)cost, h5_serial_overflows(), fault, gpio_get_level(H5_X_ENABLE), gpio_get_level(H5_Z_ENABLE));
     hal.stream.write(text);
@@ -492,7 +509,7 @@ bool driver_init(void)
 {
     hal.info = "ESP32-P4";
     hal.driver_version = "260914";
-    hal.driver_options = "BENCH_ONLY,GPTIMER,PCNT";
+    hal.driver_options = H5_BENCH_ONLY ? "BENCH_ONLY,GPTIMER,PCNT" : "AXIS_CONTROL,GPTIMER,PCNT";
     hal.board = "Waveshare P4 10.1 H5";
     hal.driver_url = "https://github.com/fer662/grblHAL-ESP32";
     hal.f_mcu = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;

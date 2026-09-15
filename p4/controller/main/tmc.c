@@ -81,11 +81,11 @@ status_code_t h5_tmc_command(sys_state_t state, char *line)
     char report[250];
     snprintf(report, sizeof(report),
              "[P4TMC:SPI:%s|DEVICE:%s|CONFIGURED:%u|IOIN:%08lx|CHOPCONF:%08lx|DRV_STATUS:%08lx|CURRENT_MA:"
-             "1700|MICROSTEPS:2|RSENSE_MOHM:75|MODE:SPREADCYCLE|EN:LOCKED]\r\n",
+             "1700|MICROSTEPS:2|RSENSE_MOHM:75|MODE:SPREADCYCLE|EN:%s]\r\n",
              device && transport_ok ? "OK" : "ERROR",
              device && driver.ioin.reg.version == 0x30 ? "TMC5160" : "MISSING", configured,
              (unsigned long)driver.ioin.reg.value, (unsigned long)driver.chopconf.reg.value,
-             (unsigned long)driver.drv_status.reg.value);
+             (unsigned long)driver.drv_status.reg.value, H5_BENCH_ONLY?"LOCKED":"CONTROLLED");
     hal.stream.write(report);
     return Status_OK;
 }

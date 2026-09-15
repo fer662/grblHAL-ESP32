@@ -1,3 +1,4 @@
 cmake_minimum_required(VERSION 3.16)
+option(H5_BENCH_ONLY "Disable motor enables and include disconnected-bench diagnostics" OFF)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-project(h5_grblhal_p4 VERSION 0.3.2)
+project(h5_grblhal_p4 VERSION 0.3.3)

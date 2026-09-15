@@ -181,7 +181,7 @@ static void preview_cycle()
     lv_obj_set_width(label,940);
     char text[1000];
     snprintf(text,sizeof(text),
-        "%s cycle / disconnected bench\n\n%u depth passes x %u starts | lead %.4f mm/rev\n"
+        "%s cycle preview\n\n%u depth passes x %u starts | lead %.4f mm/rev\n"
         "Machining %c: %.3f to %.3f mm\nApproach: %.3f mm | End: %.3f mm\n"
         "%c infeed: %.3f to %.3f mm | Retracted: %.3f mm\n"
         "Lead-in: %.3f mm | Run-out: %.3f mm\n\n"
@@ -271,7 +271,7 @@ void h5_ui_sync()
         h5_update_status_t net; h5_update_snapshot(&net);
         char text[900];
         snprintf(text,sizeof(text),
-            "Diagnostics | %s | Motor enables locked\n"
+            "Diagnostics | %s | %s\n"
             "Wi-Fi: %s\nhttp://%s:8080/diagnostics\n"
             "Encoder: %lld counts | %.2f RPM | %s\n"
             "Steps X: %lu / %ld   Z: %lu / %ld (issued / counted)\n"
@@ -281,7 +281,7 @@ void h5_ui_sync()
             "Sample age: %lu ms | TMC read age: %lu ms\n"
             "Read-only access on this Wi-Fi for 30 minutes.\n"
             "BACK keeps logging available; STOP closes access.",
-            h5_diagnostics_active()?"sharing":"sharing stopped", net.connected?"connected":"disconnected",
+            h5_diagnostics_active()?"sharing":"sharing stopped", h5_motor_controls_enabled()?"Axis controls enabled":"Motor enables locked", net.connected?"connected":"disconnected",
             net.connected?net.ip:"waiting-for-wifi", (long long)d.encoder, (double)d.rpm,
             d.simulated?"SIMULATED":"real encoder", (unsigned long)d.x_pulses,(long)d.x_counted,
             (unsigned long)d.z_pulses,(long)d.z_counted,d.fault,d.sync_fault,
@@ -292,7 +292,8 @@ void h5_ui_sync()
     }
     if (status_label) {
         String text = status.ready ? status.state : "Starting controller";
-        text += "  |  Motor outputs disabled  |  Tap for diagnostics";
+        text += h5_motor_controls_enabled() ? "  |  Axis controls enabled" : "  |  Motor outputs disabled";
+        text += "  |  Tap for diagnostics";
         if (!notice.empty()) text += "\n" + notice;
         lv_label_set_text(status_label, text.c_str());
     }
@@ -431,7 +432,7 @@ extern "C" bool h5_ui_ready(void) { return ui_ready.load() && h5_audio_initializ
 extern "C" uint32_t h5_ui_updates(void) { return ui_updates.load(std::memory_order_relaxed); }
 extern "C" bool h5_ui_test_action(char action)
 {
-    return ui_ready.load() && strchr("123405678FCEGKAUDQR+NVBW", action) && xQueueSend(test_actions, &action, 0) == pdTRUE;
+    return ui_ready.load() && (!h5_motor_controls_enabled() || strchr("VBWUQ",action)) && strchr("123405678FCEGKAUDQR+NVBW", action) && xQueueSend(test_actions, &action, 0) == pdTRUE;
 }
 extern "C" bool h5_ui_screenshot(void (*write)(const char *))
 {

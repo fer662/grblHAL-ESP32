@@ -2,7 +2,9 @@
 
 Updated 2026-09-15. Original committed H5 baseline: `981851b2`.
 The original H5 checkout and its unrelated dirty experiments remain unchanged.
-This is a disconnected Waveshare P4 bench build with X/Z enables hardlocked off.
+Earlier acceptance used a disconnected Waveshare P4 with enables locked. The
+0.3.3 main build enables normal axis controls for the operator-requested first
+unloaded Z test; installation status and remaining checks are recorded below.
 
 ## Implemented
 
@@ -186,6 +188,29 @@ The current diagnostic's 1,700 mA and 75 mOhm fields are requested configuration
 not measured current or independent current-register readback. Full current,
 electrical enable/STEP/DIR, powered spindle and loaded-drive checks remain open.
 
+## 0.3.3 main axis-control build
+
+The operator explicitly requested the main firmware's existing axis controls,
+without a separate commissioning/arming UI. The first physical movement is Z
+only with the carriage disengaged, before scope/logic-analyzer measurement.
+
+The driver now honors native grblHAL enable masks, configured polarity and
+idle-hold behavior. Startup/update readiness and a latched driver fault inhibit
+enables. Motion settings, pitch/gear calibration, touchscreen operations and
+planner code are unchanged. Normal firmware excludes synthetic encoder output,
+the GPIO encoder self-test, deliberate IRQ-stall injection and motion-producing
+UI test fixtures. `H5_BENCH_ONLY=ON` remains an explicit CMake option for the
+original disconnected bench suites.
+
+The 0.3.3 application builds successfully. The host test of the actual enable
+callback passes all axis/polarity masks, hold requests, startup inhibition,
+fault shutdown and the bench gate. ELF inspection confirms the simulator and
+encoder-output self-test are absent and enable/fault routines remain in IRAM.
+Image SHA-256:
+`60586cc83c5279a049a3794962ffd20a29c1b098a65f57c0253a9f5b1df10245`.
+OTA installation is pending the tablet's temporary local pairing key. No motor
+movement or connected motion regression has been performed by the agent.
+
 ## Hardware acceptance still required
 
 - [ ] Inspect external STEP/DIR pulse widths, jitter, skew and setup/hold at the connector.
@@ -202,4 +227,5 @@ No software test can mark these hardware checks complete. Internal pulse counter
 observe MCU GPIO only; the real TMC5160 now responds and passes initialization,
 but loaded behavior and actual current have not been measured. The internal pulse-service measurements above are not constant
 10 us pulses or an externally measured jitter bound. Motor enables remain
-locked; the compile-time gate cannot be bypassed with a command or setting.
+locked in the historical bench builds. The normal 0.3.3 build permits axis
+control by operator request; remaining physical measurements are not claimed.
