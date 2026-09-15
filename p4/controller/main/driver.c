@@ -277,9 +277,10 @@ static status_code_t command(sys_state_t state, char *line)
         h5_status_t snapshot;
         h5_bridge_snapshot(&snapshot);
         char text[160];
-        snprintf(text, sizeof(text), "[P4UI:READY:%u|COMMAND:%lu|COMPLETED:%lu|STATUS:%d|GENERATION:%lu]\r\n",
+        snprintf(text, sizeof(text), "[P4UI:READY:%u|COMMAND:%lu|COMPLETED:%lu|STATUS:%d|GENERATION:%lu|UI_UPDATES:%lu|UPTIME:%lu]\r\n",
             h5_ui_ready(), (unsigned long)snapshot.command_id, (unsigned long)snapshot.completed_id,
-            snapshot.command_status, (unsigned long)snapshot.stream_generation);
+            snapshot.command_status, (unsigned long)snapshot.stream_generation,
+            (unsigned long)h5_ui_updates(), (unsigned long)hal.get_elapsed_ticks());
         hal.stream.write(text);
         return Status_OK;
     }

@@ -1219,3 +1219,13 @@ void NormalOperationMode::createTabContent(int tabId) {
     break;
   }
 }
+
+void NormalOperationMode::testJogEvent(char action) {
+  const DPad::Direction directions[] = {DPad::BTN_UP, DPad::BTN_DOWN, DPad::BTN_LEFT, DPad::BTN_RIGHT};
+  if (action >= '1' && action <= '4') {
+    lv_event_send(dpad->getButton(directions[action - '1']), LV_EVENT_PRESSED, nullptr);
+  } else if (action == '0' || action == '5') {
+    for (DPad::Direction direction : directions)
+      lv_event_send(dpad->getButton(direction), action == '0' ? LV_EVENT_RELEASED : LV_EVENT_PRESS_LOST, nullptr);
+  }
+}

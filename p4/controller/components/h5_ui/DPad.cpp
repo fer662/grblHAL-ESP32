@@ -58,6 +58,7 @@ DPad::DPad(lv_obj_t *parent, ButtonDownCallback downCb, ButtonUpCallback upCb,
     // Add event callbacks for press and release
     lv_obj_add_event_cb(buttons[i], press_event_cb, LV_EVENT_PRESSED, this);
     lv_obj_add_event_cb(buttons[i], press_event_cb, LV_EVENT_RELEASED, this);
+    lv_obj_add_event_cb(buttons[i], press_event_cb, LV_EVENT_PRESS_LOST, this);
     lv_obj_add_event_cb(buttons[i], hit_test_cb, LV_EVENT_HIT_TEST,
                         (void *)(intptr_t)i);
     lv_obj_add_event_cb(buttons[i], draw_event_cb, LV_EVENT_DRAW_MAIN,
@@ -219,7 +220,7 @@ void DPad::press_event_cb(lv_event_t *e) {
     if (btn == self->buttons[i]) {
       if (event_code == LV_EVENT_PRESSED && self->buttonDownCallback) {
         self->buttonDownCallback((Direction)i, self->userData);
-      } else if (event_code == LV_EVENT_RELEASED && self->buttonUpCallback) {
+      } else if ((event_code == LV_EVENT_RELEASED || event_code == LV_EVENT_PRESS_LOST) && self->buttonUpCallback) {
         self->buttonUpCallback((Direction)i, self->userData);
       }
       break;
@@ -482,7 +483,7 @@ void DPad::endstop_press_event_cb(lv_event_t *e) {
     if (btn == self->endstopButtons[i]) {
       if (event_code == LV_EVENT_PRESSED && self->buttonDownCallback) {
         // self->buttonDownCallback((Direction)i, self->userData);
-      } else if (event_code == LV_EVENT_RELEASED && self->buttonUpCallback) {
+      } else if (event_code == LV_EVENT_RELEASED && self->endstopButtonUpCallback) {
         self->endstopButtonUpCallback((Direction)i, self->userData);
       }
       break;

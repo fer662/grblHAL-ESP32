@@ -28,6 +28,7 @@ void h5_bridge_resume(void);
 void h5_bridge_snapshot(h5_status_t *status);
 void h5_ui_start(void);
 bool h5_ui_ready(void);
+uint32_t h5_ui_updates(void);
 bool h5_ui_screenshot(void (*write)(const char *));
 bool h5_ui_test_action(char action); // isolated bench diagnostic only
 #ifdef __cplusplus

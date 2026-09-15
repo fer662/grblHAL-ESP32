@@ -20,6 +20,7 @@ typedef struct _lv_obj_t lv_obj_t;
 // Normal operation mode
 class NormalOperationMode : public OperationMode {
 public:
+  void testJogEvent(char action); // Isolated bench: exercise the actual LVGL event path.
   explicit NormalOperationMode(StateMachine &stateMachine, Display &display);
   void initialize() override;
   void update() override;

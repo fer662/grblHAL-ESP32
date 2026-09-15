@@ -100,8 +100,10 @@ def exact_move(gcode, delta_x, delta_z):
 
 try:
     port.open()
-    # Positive identification before sending any commands that could move axes.
-    receive(lambda s: 'H5_P4_BENCH_MOTOR_ENABLES_LOCKED' in s or 'GrblHAL' in s, timeout=12)
+    # Open may reset this bridge; allow boot, but do not require a new banner
+    # when reopening an already running controller. Identify before motion.
+    time.sleep(2.5)
+    port.reset_input_buffer()
     info = command('$I')
     assert any('H5_P4_BENCH_MOTOR_ENABLES_LOCKED' in s for s in info), info
     deadline = time.monotonic() + 10
@@ -112,19 +114,20 @@ try:
     if status().startswith('<Alarm'):
         command('$X')
     assert any('P4ENCODERTEST:PASS' in s for s in command('$P4ENCODERTEST'))
-    for axis, action, sign in [('X', '1', 1), ('X', '2', -1), ('Z', '3', 1), ('Z', '4', -1)]:
-        before = diagnostics()
-        command('$P4UITEST=' + action)
-        wait_state('Jog')
-        time.sleep(.1)
-        command('$P4UITEST=0')
-        after = idle()
-        delta = after[axis][0] - before[axis][0]
-        assert delta > 0, (axis, before, after)
-        assert after[axis][1] - before[axis][1] == sign * delta
-        ui = command('$P4UI')
-        assert any('|STATUS:0|' in line for line in ui), ui
-    print('PASS: touchscreen jog handlers -> queue -> grblHAL -> GPIO, both axes/directions/cancel.', flush=True)
+    for release in ('0', '5'):  # finger up and finger dragged off the button
+        for axis, action, sign in [('X', '1', 1), ('X', '2', -1), ('Z', '3', 1), ('Z', '4', -1)]:
+            before = diagnostics()
+            command('$P4UITEST=' + action)
+            wait_state('Jog')
+            time.sleep(.1)
+            command('$P4UITEST=' + release)
+            after = idle()
+            delta = after[axis][0] - before[axis][0]
+            assert delta > 0, (axis, before, after)
+            assert after[axis][1] - before[axis][1] == sign * delta
+            ui = command('$P4UI')
+            assert any('|STATUS:0|' in line for line in ui), ui
+        print(f'PASS: LVGL jog events -> queue -> grblHAL -> GPIO; release event {release}, both axes/directions.', flush=True)
     command('G21 G18 G8 G91 G94')
     exact_move('G1 X1 Z2 F60', 1200, 400)
     exact_move('G1 X-1 Z-2 F60', -1200, -400)

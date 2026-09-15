@@ -3,6 +3,7 @@
 #include "bridge.h"
 #include "display.h"
 #include "StateMachine.h"
+#include "NormalOperationMode.h"
 #include "App_Style.h"
 #include "bsp/esp-bsp.h"
 #include "bsp/display.h"
@@ -21,6 +22,7 @@ PitchType pitchType = PITCH_TYPE_MM_PER_TURN;
 Axis x = {'X', 1200, 10000}, z = {'Z', 400, 20000};
 static h5_status_t status;
 static std::atomic<bool> ui_ready{false};
+static std::atomic<uint32_t> ui_updates{0};
 static QueueHandle_t test_actions;
 static lv_obj_t *status_label, *update_panel;
 static String notice;
@@ -207,11 +209,12 @@ static void ui_task(void *)
         bsp_display_lock(portMAX_DELAY);
         char action;
         while (xQueueReceive(test_actions, &action, 0) == pdTRUE) {
-            if (action == '1' || action == '2') h5_ui_jog(&x, action == '1' ? 1 : -1, true);
-            else if (action == '3' || action == '4') h5_ui_jog(&z, action == '3' ? 1 : -1, true);
-            else if (action == '0') { h5_ui_jog(&x, 0, false); h5_ui_jog(&z, 0, false); }
+            OperationMode *screen = screens.getCurrentMode();
+            if (screen && strcmp(screen->getName(), "Normal Operation") == 0)
+                static_cast<NormalOperationMode *>(screen)->testJogEvent(action);
         }
         screens.updateDisplay();
+        ui_updates.fetch_add(1, std::memory_order_relaxed);
         bsp_display_unlock();
         vTaskDelay(pdMS_TO_TICKS(30));
     }
@@ -224,13 +227,14 @@ extern "C" void h5_ui_start(void)
 }
 
 extern "C" bool h5_ui_ready(void) { return ui_ready.load(); }
+extern "C" uint32_t h5_ui_updates(void) { return ui_updates.load(std::memory_order_relaxed); }
 extern "C" bool h5_ui_test_action(char action)
 {
-    return ui_ready.load() && strchr("12340", action) && xQueueSend(test_actions, &action, 0) == pdTRUE;
+    return ui_ready.load() && strchr("123405", action) && xQueueSend(test_actions, &action, 0) == pdTRUE;
 }
 extern "C" bool h5_ui_screenshot(void (*write)(const char *))
 {
-    if (!ui_ready.load() || !bsp_display_lock(1000)) return false;
+    if (!ui_ready.load() || bsp_display_lock(1000) != ESP_OK) return false;
     lv_obj_t *screen = lv_scr_act();
     uint32_t bytes = lv_snapshot_buf_size_needed(screen, LV_IMG_CF_TRUE_COLOR);
     void *buffer = heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);

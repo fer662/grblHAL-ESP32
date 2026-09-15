@@ -108,9 +108,11 @@ controlled stop, not this fault path.
 ### Touchscreen diagnostics
 
 `$P4UI` reports display readiness, UI command/completion IDs, last command status
-and stream generation. The isolated bench diagnostic `$P4UITEST=n` exercises
-UI jog handlers: 1=X+, 2=X-, 3=Z+, 4=Z-, 0=release. These handlers use the same
-queue as touch events. It does not simulate the GT911 sensor or a physical tap.
+and stream generation, plus `UI_UPDATES` and `UPTIME` for liveness checks.
+The isolated bench diagnostic `$P4UITEST=n` sends events to the actual LVGL jog
+buttons: 1=X+, 2=X-, 3=Z+, 4=Z-, 0=release, 5=press lost (finger dragged off).
+It exercises widget callbacks and the command queue, but does not simulate the
+GT911 sensor or a physical tap.
 
 `$P4SCREEN` captures the rendered LVGL screen while idle, using RGB565 run-length
 encoding. `python capture_screen.py PORT screen.png` decodes it without Pillow.
@@ -130,11 +132,35 @@ overlap, late-alarm and RX overflow counters stayed zero. Internal pulse service
 was 15.3–19.9 us; longest core step callback was 16 us. These are software/PCNT
 observations, not scope measurements or proof of machining accuracy.
 
-After the successful suite, USB stopped returning data on subsequent connections,
+After the initial successful suite, USB stopped returning data on subsequent connections,
 including a ROM bootloader probe and explicit hardware-reset attempt. Screen
-capture therefore remains unverified: the capture command was not reached.
-Physical display/touch responsiveness and USB recovery still need checking; do
-not treat the passing motion suite as a completed long-duration stability test.
+capture could not be verified at that point: the capture command was not reached.
+The owner subsequently confirmed that the display and touch were responsive and
+power-cycled the tablet, restoring USB access.
+
+The reconnect investigation reproduced a client timing issue: opening the USB
+port can reset the P4. Commands sent before its roughly two-second startup were
+lost. Waiting 2.5 seconds before querying the application passed ten reconnects
+and two full screen captures. A separate connection held open for 60 seconds
+showed advancing UI update counts and controller uptime, with no reboot or stall.
+This explains the reproduced command timeout; it does not conclusively explain
+the earlier ROM bootloader connection failure.
+
+Screen capture is now verified. Its initial lock check confused `ESP_OK` (zero)
+with a Boolean failure and returned while holding the display lock. It now tests
+the actual error code and releases the lock after taking a snapshot. A regression
+check confirms UI updates continue after every capture. Jog buttons also cancel
+on LVGL `PRESS_LOST`, so dragging out of a held button follows the release path.
+The motion suite now sends both `RELEASED` and `PRESS_LOST` through the actual
+LVGL button event dispatch, verifying cancellation in all four directions before
+running the coordinated-motion, acceleration, hold/reset and rollover checks.
+The final installed build passed that expanded suite: 4,680 X pulses and 47,324 Z
+pulses matched hardware counts; fault/overlap/late/RX-overflow counters were zero.
+Internal pulse service spanned 15.3–21.4 us and the longest core callback was 17 us.
+
+Run `python verify_connection.py PORT --seconds 60` for reopen/snapshot checks
+followed by a 60-second continuous-connection test. These are bounded bench
+checks, not a long-duration or machine-load stability certification.
 
 ## Remaining port sequence
 
