@@ -50,10 +50,10 @@ set(CORE_SOURCES
     "${CORE_ROOT}/grbl/my_plugin.c"
     "${CORE_ROOT}/grbl/my_plugin.c"
 )
-idf_component_register(SRCS main.c driver.c serial.c feedback.c ${CORE_SOURCES}
+idf_component_register(SRCS main.c driver.c serial.c feedback.c bridge.c ${CORE_SOURCES}
     INCLUDE_DIRS "." "${CORE_ROOT}"
-    REQUIRES esp_driver_gpio esp_driver_uart esp_driver_gptimer esp_driver_pcnt esp_timer esp_hw_support)
+    REQUIRES h5_ui esp_driver_gpio esp_driver_uart esp_driver_gptimer esp_driver_pcnt esp_timer esp_hw_support)
 target_compile_definitions(${COMPONENT_LIB} PUBLIC GRBL_ESP32)
 target_compile_options(${COMPONENT_LIB} PRIVATE
-    -include "${CMAKE_CURRENT_LIST_DIR}/machine.h"
+    "-include${CMAKE_CURRENT_LIST_DIR}/machine.h"
     -Wno-missing-field-initializers -Wno-format -Wno-implicit-fallthrough)

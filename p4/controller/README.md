@@ -27,10 +27,23 @@ untouched. The P4 HAL uses current ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 - Bench-only compile gate forces X enable HIGH and Z enable LOW. No command
   or setting can energize drivers. Only use with the tablet disconnected.
 - Settings live in the core's RAM buffer. Existing H5 NVS/storage is untouched.
+- H5 touchscreen widgets imported from the committed H5 baseline, LVGL 8.3.11,
+  Waveshare MIPI display and GT911 touch. UI and LVGL run on core 0; grblHAL and
+  its timer interrupts run on core 1.
+- Queued UI commands enter the normal grbl parser at USB line boundaries.
+  Status is copied into a coherent snapshot; callbacks never run motion code.
+  Jog cancellation bypasses the queue and invalidates pending jog requests.
+  Stream reset also discards pending UI requests and clears held gestures.
+- X/Z readouts, zero, numeric/continuous/fine jog, machining stops, units,
+  original pitch picker, eight operation tabs and cycle parameter controls.
+  Async Z feed uses grbl's accelerated jog path. Other START buttons explicitly
+  report that spindle-synchronized operations are pending.
+- SDK application logs are suppressed on UART0 to protect protocol responses.
+  Core diagnostics remain available through the commands below.
 
-**Not a replacement for H5 yet:** spindle synchronization/threading, TMC5160 SPI
-initialization, touchscreen recipes, persistent settings, Wi-Fi and dual-slot
-OTA/rollback are not enabled. The app does not claim those HAL capabilities.
+**Not ready to run the lathe yet:** spindle synchronization/threading, TMC5160 SPI
+initialization, assisted cutting recipes, sound, persistent settings, Wi-Fi and
+dual-slot OTA/rollback are not enabled. The app does not claim those HAL capabilities.
 All eight H5 operations remain migration requirements; none is being removed.
 The disabled enables are intentional even though STEP/DIR are real outputs.
 
@@ -58,9 +71,10 @@ The factory partition is 8 MB. Do not use unrestricted `idf.py flash` on H5:
 that command also writes the bootloader/table.
 
 Save the original bytes for the app's entire sector-rounded overwrite window,
-including the tail sector. After the test, restore that window, verify all
-32 MB against the pre-test backup with `esptool verify_flash`, then boot H5.
-If successive test images differ in size, restore the largest erased window.
+including the tail sector. Keep the new application installed while continuing
+the port. Recovery is optional: restore that window and verify all 32 MB against
+the pre-test backup with `esptool verify_flash` to return to old H5. If successive
+test images differ in size, the recovery window must cover the largest erase.
 Backups may contain credentials and must never be committed.
 
 Run `python verify_motion.py /dev/cu.YOUR_PORT` with the IDF Python environment.
@@ -90,6 +104,54 @@ A timing fault stops timer service, cancels pending pulses, keeps enables off,
 and raises a motor fault alarm. A hardware reboot is required to clear this
 bench fault; `$X` cannot bypass it. A normal feed hold/jog cancel uses grblHAL's
 controlled stop, not this fault path.
+
+### Touchscreen diagnostics
+
+`$P4UI` reports display readiness, UI command/completion IDs, last command status
+and stream generation. The isolated bench diagnostic `$P4UITEST=n` exercises
+UI jog handlers: 1=X+, 2=X-, 3=Z+, 4=Z-, 0=release. These handlers use the same
+queue as touch events. It does not simulate the GT911 sensor or a physical tap.
+
+`$P4SCREEN` captures the rendered LVGL screen while idle, using RGB565 run-length
+encoding. `python capture_screen.py PORT screen.png` decodes it without Pillow.
+The capture client resets the grbl session. A rendered screenshot verifies layout,
+not physical panel color, touch alignment or an attached motor.
+
+### Validation, 2026-09-14
+
+The app was built with ESP-IDF 5.5.2, flashed via USB at 0x10000, and left installed
+on the disconnected Waveshare tablet. The full `verify_motion.py` suite passed
+with the display rendering throughout: touchscreen-handler jog/cancel in all four
+directions, coordinated moves/reversal, X acceleration/deceleration trace, hold/
+resume, 12 jog/cancel/reverse cycles, reset recovery, synthetic spindle counter
+rollover and a 40,000-pulse Z move while serving a detailed USB report.
+Issued and hardware-counted pulses matched: X 4,140; Z 46,602. All timing fault,
+overlap, late-alarm and RX overflow counters stayed zero. Internal pulse service
+was 15.3–19.9 us; longest core step callback was 16 us. These are software/PCNT
+observations, not scope measurements or proof of machining accuracy.
+
+After the successful suite, USB stopped returning data on subsequent connections,
+including a ROM bootloader probe and explicit hardware-reset attempt. Screen
+capture therefore remains unverified: the capture command was not reached.
+Physical display/touch responsiveness and USB recovery still need checking; do
+not treat the passing motion suite as a completed long-duration stability test.
+
+## Remaining port sequence
+
+1. Validate the spindle tracking/HAL interface, including geared A/B phase,
+   repeated-pass and multi-start registration, spindle reversal/stall behavior,
+   and synchronization while the display is busy. The P4 IDF port disallows FPU
+   use from interrupts (`FreeRTOS-Kernel/portable/riscv/portasm.S`); upstream
+   `st_spindle_sync_out` uses floating point. Do not simply enable it without
+   resolving and testing interrupt context handling.
+2. Implement all eight assisted-operation semantics in an application cycle
+   service over grbl motion, preserving signed pitch, starts, pass progression,
+   cone/ellipse geometry, machining stops and deliberate clearance moves.
+3. Add verified TMC5160 SPI configuration, settings/preferences storage and sound.
+4. Add hosted Wi-Fi and dual-slot OTA with rollback; prepare and test a backup-
+   preserving partition migration. Flash writes must require motion stopped.
+5. Verify external waveforms, encoder phase and actual drives before removing the
+   bench enable lock; then validate the preserved operations on the machine.
 
 ## Upstream updates
 

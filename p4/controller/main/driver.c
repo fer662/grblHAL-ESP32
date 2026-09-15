@@ -19,6 +19,7 @@
 #include "grbl/task.h"
 #include "serial.h"
 #include "feedback.h"
+#include "bridge.h"
 
 #if !H5_BENCH_ONLY
 #error "Machine output enable requires the remaining hardware acceptance gates."
@@ -254,6 +255,7 @@ static void realtime(sys_state_t state)
 {
     previous_realtime(state);
     h5_serial_poll();
+    h5_bridge_poll();
     // Let the idle task and UART worker run while the core waits for input.
     // Pulse timing belongs solely to the hardware timers, never this delay.
     static uint32_t yielded;
@@ -271,6 +273,24 @@ static void settings_changed(settings_t *s, settings_changed_flags_t changed)
 }
 static status_code_t command(sys_state_t state, char *line)
 {
+    if (strcmp(line, "P4UI") == 0) {
+        h5_status_t snapshot;
+        h5_bridge_snapshot(&snapshot);
+        char text[160];
+        snprintf(text, sizeof(text), "[P4UI:READY:%u|COMMAND:%lu|COMPLETED:%lu|STATUS:%d|GENERATION:%lu]\r\n",
+            h5_ui_ready(), (unsigned long)snapshot.command_id, (unsigned long)snapshot.completed_id,
+            snapshot.command_status, (unsigned long)snapshot.stream_generation);
+        hal.stream.write(text);
+        return Status_OK;
+    }
+    if (strncmp(line, "P4UITEST=", 9) == 0) {
+        if (strlen(line) != 10) return Status_InvalidStatement;
+        return h5_ui_test_action(line[9]) ? Status_OK : Status_InvalidStatement;
+    }
+    if (strcmp(line, "P4SCREEN") == 0) {
+        if (state != STATE_IDLE || running || pulse_phase) return Status_IdleError;
+        return h5_ui_screenshot(hal.stream.write) ? Status_OK : Status_SelfTestFailed;
+    }
     if (strcmp(line, "P4ENCODERTEST") == 0) {
         if (state != STATE_IDLE || running || pulse_phase) return Status_IdleError;
         bool ok = h5_feedback_selftest();
@@ -399,5 +419,6 @@ bool driver_init(void)
     previous_command = grbl.on_unknown_sys_command;
     grbl.on_unknown_sys_command = command;
     grbl.on_pre_gcode_execute = validate;
+    h5_bridge_init();
     return h5_serial_init() && hal.version == 10;
 }

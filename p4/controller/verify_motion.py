@@ -104,10 +104,27 @@ try:
     receive(lambda s: 'H5_P4_BENCH_MOTOR_ENABLES_LOCKED' in s or 'GrblHAL' in s, timeout=12)
     info = command('$I')
     assert any('H5_P4_BENCH_MOTOR_ENABLES_LOCKED' in s for s in info), info
+    deadline = time.monotonic() + 10
+    while not any('P4UI:READY:1' in line for line in command('$P4UI')):
+        assert time.monotonic() < deadline, 'Touchscreen failed to initialize'
+        time.sleep(.1)
     diagnostics()
     if status().startswith('<Alarm'):
         command('$X')
     assert any('P4ENCODERTEST:PASS' in s for s in command('$P4ENCODERTEST'))
+    for axis, action, sign in [('X', '1', 1), ('X', '2', -1), ('Z', '3', 1), ('Z', '4', -1)]:
+        before = diagnostics()
+        command('$P4UITEST=' + action)
+        wait_state('Jog')
+        time.sleep(.1)
+        command('$P4UITEST=0')
+        after = idle()
+        delta = after[axis][0] - before[axis][0]
+        assert delta > 0, (axis, before, after)
+        assert after[axis][1] - before[axis][1] == sign * delta
+        ui = command('$P4UI')
+        assert any('|STATUS:0|' in line for line in ui), ui
+    print('PASS: touchscreen jog handlers -> queue -> grblHAL -> GPIO, both axes/directions/cancel.', flush=True)
     command('G21 G18 G8 G91 G94')
     exact_move('G1 X1 Z2 F60', 1200, 400)
     exact_move('G1 X-1 Z-2 F60', -1200, -400)
@@ -173,5 +190,9 @@ try:
     minimum, maximum = map(int, final['PULSE'].split(','))
     assert minimum >= 100, (minimum, maximum)  # 10 MHz clock => 10 us requested width
     print('PASS: P4 grblHAL bench suite complete. Physical load, encoder phase, and external waveform measurements still required.', flush=True)
+except BaseException:
+    if port.is_open:
+        port.write(b"\x18")
+    raise
 finally:
     port.close()

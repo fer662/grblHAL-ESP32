@@ -7,6 +7,8 @@
 #include "grbl/protocol.h"
 #include "grbl/stepper.h"
 #include "serial.h"
+#include "bridge.h"
+static bool usb_line_active;
 
 // Only the grbl task reads UART and owns this ring. Realtime commands are
 // extracted before queued G-code, including while the planner buffer is full.
@@ -19,7 +21,12 @@ static enqueue_realtime_command_ptr realtime = protocol_enqueue_realtime_command
 static unsigned count(void) { return (head - tail) & (sizeof(rx) - 1); }
 static uint16_t available(void) { return count(); }
 static uint16_t space(void) { return sizeof(rx) - 1 - count(); }
-static void flush(void) { head = tail = 0; dropping_line = false; }
+static void flush(void)
+{
+    head = tail = 0;
+    dropping_line = usb_line_active = false;
+    h5_bridge_flush();
+}
 static void cancel(void) { flush(); rx[head++] = ASCII_CAN; }
 static bool write_char(const uint8_t c)
 {
@@ -77,9 +84,14 @@ void h5_serial_poll(void)
 static int32_t read_char(void)
 {
     h5_serial_poll();
+    if (h5_bridge_active() || (!usb_line_active && !count())) {
+        int32_t c = h5_bridge_read();
+        if (c != SERIAL_NO_DATA) return c;
+    }
     if (!count()) return -1;
     uint8_t c = rx[tail];
     tail = (tail + 1) & (sizeof(rx) - 1);
+    usb_line_active = c != '\n' && c != '\r' && c != ASCII_CAN;
     return c;
 }
 bool h5_serial_init(void)
