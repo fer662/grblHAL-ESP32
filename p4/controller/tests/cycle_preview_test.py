@@ -79,6 +79,11 @@ int main() {
     format_cycle_preview(plan,text,sizeof text);
     assert(strstr(text,"Full-depth thread: Z 2.945 to 7.060 mm | length 4.115 mm"));
     assert(strstr(text,"X withdrawal: Z 7.060 to 9.880 mm | Z stop: 10.000 mm"));
+    m.x_max_rate=300;m.x_acceleration=500;
+    assert(h5_cycle_plan(&c,&m,&plan,error,sizeof error));
+    format_cycle_preview(plan,text,sizeof text);
+    assert(strstr(text,"Full-depth thread: Z 2.825 to 7.180 mm | length 4.355 mm"));
+    assert(strstr(text,"X withdrawal: Z 7.180 to 9.880 mm | Z stop: 10.000 mm"));
     puts("PASS: preview zeros, axis selection, metric/inch positions and lengths; geometry unchanged");
 }
 '''.replace('FORMATTER', formatter)

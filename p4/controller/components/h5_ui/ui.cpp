@@ -147,7 +147,9 @@ void h5_ui_jog(Axis *a, int sign, bool pressed)
         return;
     }
     if (held_axis || a->disabled || h5_axis_change_pending()) return;
-    continuous_jog = jogContinuous;
+    const bool rapid = moveStep == MOVE_STEP_RAPIDS;
+    if (rapid && h5_follow_busy()) { notice = "Stop assisted operation before rapid jogging"; return; }
+    continuous_jog = rapid || jogContinuous;
     float distance = continuous_jog ? (a == &x ? MAX_TRAVEL_MM_X : MAX_TRAVEL_MM_Z) : moveStep / 10000.0f;
     if (h5_follow_busy()) {
         if (h5_follow_jog(a->name, sign, distance, continuous_jog)) held_axis = a;
@@ -164,7 +166,9 @@ void h5_ui_jog(Axis *a, int sign, bool pressed)
     }
     held_axis = a;
     uint32_t before = last_command;
-    jog(a, sign, distance, a == &x ? 60 : 960);
+    const float feed = rapid ? status.max_rate[a == &x ? 0 : 2] : (a == &x ? 60 : 960);
+    if (!std::isfinite(feed) || feed <= 0) { held_axis = nullptr; notice = "Axis speed is unavailable"; return; }
+    jog(a, sign, distance, feed);
     if (!continuous_jog && last_command != before) single_jog_id = last_command;
 }
 void manualMoveAxis(Axis *a, float mm)
@@ -334,13 +338,14 @@ void buttonOnOffPress(bool on)
 void buttonMoveStepPress()
 {
     if (measure == MEASURE_METRIC)
-        moveStep = moveStep == MOVE_STEP_1 ? MOVE_STEP_2 : moveStep == MOVE_STEP_2 ? MOVE_STEP_3 : MOVE_STEP_1;
-    else moveStep = moveStep == MOVE_STEP_IMP_1 ? MOVE_STEP_IMP_2 : moveStep == MOVE_STEP_IMP_2 ? MOVE_STEP_IMP_3 : MOVE_STEP_IMP_1;
+        moveStep = moveStep == MOVE_STEP_1 ? MOVE_STEP_2 : moveStep == MOVE_STEP_2 ? MOVE_STEP_3 : moveStep == MOVE_STEP_3 ? MOVE_STEP_RAPIDS : MOVE_STEP_1;
+    else moveStep = moveStep == MOVE_STEP_IMP_1 ? MOVE_STEP_IMP_2 : moveStep == MOVE_STEP_IMP_2 ? MOVE_STEP_IMP_3 : moveStep == MOVE_STEP_IMP_3 ? MOVE_STEP_RAPIDS : MOVE_STEP_IMP_1;
 }
 void buttonMeasurePress()
 {
     measure = measure == MEASURE_METRIC ? MEASURE_INCH : MEASURE_METRIC;
-    moveStep = measure == MEASURE_METRIC ? MOVE_STEP_1 : MOVE_STEP_IMP_1;
+    if (moveStep != MOVE_STEP_RAPIDS)
+        moveStep = measure == MEASURE_METRIC ? MOVE_STEP_1 : MOVE_STEP_IMP_1;
 }
 void h5_ui_sync()
 {

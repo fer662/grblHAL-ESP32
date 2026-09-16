@@ -11,6 +11,13 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
 ## Current scope
 
+**0.3.20 adds a fourth STEP choice, Rapids, and raises X acceleration to
+500 mm/s² for testing.** Rapids always requires holding a direction and uses
+native axis maximum rates; Jog Limits still applies. X max stays 5 mm/s,
+ordinary X jog stays 1 mm/s. A one-time settings upgrade changes saved X
+acceleration from 25 to 500 while preserving other tuning. This applies to all
+X motion. See [Rapids controls](UI_ROADMAP.md).
+
 **0.3.19 synchronizes and accelerates Thread with X clear, then infeeds and
 withdraws X while Z keeps moving.** All 27 native motion blocks are queued before
 one index wait; an opt-in core patch preserves phase across them. The preview
@@ -102,7 +109,7 @@ lathe. See [wireless commissioning](WIRELESS_COMMISSIONING.md).
 - Real grblHAL G-code parser, planner, Bresenham/AMASS step generation,
   acceleration profiles, feed hold/resume, jog cancellation and reset handling.
 - X/Z STEP/DIR on the existing H5 pins; calibration 1200 / 200 steps per mm,
-  max rates 300 / 960 mm/min, accelerations 25 / 100 mm/s² (normal build; disconnected bench retains X max 60 and Z acceleration 50), X radial coordinates.
+  max rates 300 / 960 mm/min, accelerations 500 / 100 mm/s² (normal build; disconnected bench retains X max 60 and X/Z acceleration 25/50), X radial coordinates.
 - grblHAL retains XYZ storage; Y commands and arcs outside G18 are rejected.
 - 10 MHz GPTimer scheduler and separate pulse timer. Minimum requested STEP
   width 10 us by default, direction setup at least 5 us. GPIO writes span two

@@ -56,6 +56,7 @@ private:
   lv_obj_t *jogModeButton = nullptr;
   lv_obj_t *jogModeLabel = nullptr;
   bool lastJogContinuous = true;
+  bool lastJogRapid = false;
   lv_obj_t *jogLimitsButton = nullptr, *jogLimitsLabel = nullptr;
   bool lastJogLimitsEnabled = true;
   std::unique_ptr<LimitEditor> limitEditor;

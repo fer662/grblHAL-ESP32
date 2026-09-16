@@ -138,6 +138,12 @@ int main() {
     click("JOG MODE\n\nHOLD");assert(!jogContinuous);check_main_layout();render("single-step.ppm");
     click("JOG MODE\n\nSINGLE\nSTEP");assert(jogContinuous);
     click("STEP");assert(moveStep==MOVE_STEP_3);screens.updateDisplay();
+    // Rapids keeps the existing jog-mode preference but visibly forces Hold.
+    moveStep=MOVE_STEP_RAPIDS;jogContinuous=false;screens.updateDisplay();
+    check_main_layout();render("rapids.ppm");
+    click("JOG MODE\n\nHOLD");assert(!jogContinuous && moveStep==MOVE_STEP_RAPIDS);
+    click("RAPIDS");screens.updateDisplay();assert(moveStep==MOVE_STEP_3 && !jogContinuous);
+    click("JOG MODE\n\nSINGLE\nSTEP");assert(jogContinuous);
     moveStep=MOVE_STEP_1;screens.updateDisplay();
     const char *labels[]={LV_SYMBOL_UP "  X+",LV_SYMBOL_DOWN "  X-",LV_SYMBOL_LEFT "  Z+","Z-  " LV_SYMBOL_RIGHT};
     const char axes[]={'X','X','Z','Z'};const int signs[]={1,-1,1,-1};

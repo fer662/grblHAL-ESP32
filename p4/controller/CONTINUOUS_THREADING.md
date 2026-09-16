@@ -1,4 +1,14 @@
-# Continuous clear-entry threading — 0.3.19
+# Continuous clear-entry threading — introduced in 0.3.19
+
+## Acceleration update in 0.3.20
+
+Normal X acceleration increases to 500 mm/s² for the requested machine trial;
+X maximum stays 5 mm/s. The entry curve and fixed stations across depth passes
+are unchanged. For the example below, full-depth Z becomes 2.825..7.180
+(length 4.355 mm). This modest length increase reflects the curve's peak-speed
+constraint at 5 mm/s; it does not mean the acceleration setting was ignored.
+Rapids provides a direct native-planner move to assess acceleration separately.
+Version 0.3.19 settings and its example below describe the prior release.
 
 ## What the old firmware did
 

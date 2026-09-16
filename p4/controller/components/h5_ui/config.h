@@ -258,6 +258,7 @@ const int GCODE_MIN_RPM = 30; // pause GCode execution if RPM is below this
 #define PREF_BUZZER_ENABLED "be"
 #define PREF_PITCH_TYPE "pt"
 
+#define MOVE_STEP_RAPIDS 0 // Hold-to-run at the native axis maximum rate.
 #define MOVE_STEP_1 10000 // 1mm
 #define MOVE_STEP_2 1000  // 0.1mm
 #define MOVE_STEP_3 100   // 0.01mm

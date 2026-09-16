@@ -6,6 +6,22 @@ Earlier acceptance used a disconnected Waveshare P4 with enables locked. The
 0.3.3 main build enables normal axis controls for the operator-requested first
 unloaded Z test; installation status and remaining checks are recorded below.
 
+## 0.3.20 Rapids and X acceleration (built; not installed)
+
+Added persistent fourth STEP choice Rapids, always hold-to-run using the native
+axis maximum. The center mode toggle visibly locks to Hold while selected, then
+restores its prior choice. Release/slide-out cancels and Jog Limits applies.
+Native X maximum remains 300 mm/min; normal X acceleration increases from 25 to
+500 mm/s². Motion revision 3 upgrades the former acceleration once and preserves
+custom settings and subsequent tuning. Bench defaults remain unchanged.
+
+Validation: production jog routing (both axes/directions, both jog modes, live
+rate, limits, release, unit cycling, invalid rates and assisted-mode rejection),
+actual LVGL pointer/render checks, saved-preference validation and migration
+failure/retry tests, native core threading simulation with the new acceleration,
+geometry/preview, cancellation/enable regressions and ESP32-P4 build passed.
+No on-machine motion commands, OTA or physical acceleration validation performed.
+
 ## 0.3.19 continuous clear-entry Thread (OTA uploaded)
 
 Checked committed H5 981851b: X infeed preceded phase wait there too. Implemented

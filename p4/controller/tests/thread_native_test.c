@@ -109,7 +109,7 @@ bool protocol_buffer_synchronize(void) {
 static void run(double speed,int direction,unsigned pass) {
  h5_cycle_config_t c={.operation=H5_THREAD,.passes=5,.starts=thread_starts,.pitch=.5*direction,.aux_forward=aux_forward,
   .x_min=0,.x_max=1,.z_min=0,.z_max=thread_starts>1?40:10,.rpm_limit=speed*1.25};
- h5_cycle_machine_t m={0,0,speed,100,960,200,25,settings.axis[X_AXIS].max_rate,1200};char error[96];
+ h5_cycle_machine_t m={0,0,speed,100,960,200,settings.axis[X_AXIS].acceleration/3600,settings.axis[X_AXIS].max_rate,1200};char error[96];
  assert(h5_cycle_plan(&c,&m,&profile,error,sizeof error));
  cancel_sent=false;
  base_rpm=rpm=speed;turns=seconds=phase_error=last_z_time=max_z_gap=0;pulses_x=pulses_z=blocks=0;timer_running=false;period=1000;
@@ -143,7 +143,7 @@ int main(void) {
  settings.planner_buffer_blocks=100;settings.junction_deviation=.01;settings.steppers.idle_lock_time=255;
  settings.axis[0].steps_per_mm=1200;settings.axis[2].steps_per_mm=200;settings.axis[1].steps_per_mm=200;
  settings.axis[0].max_rate=300;settings.axis[2].max_rate=960;settings.axis[1].max_rate=960;
- settings.axis[0].acceleration=25*3600;settings.axis[2].acceleration=100*3600;settings.axis[1].acceleration=100*3600;
+ settings.axis[0].acceleration=500*3600;settings.axis[2].acceleration=100*3600;settings.axis[1].acceleration=100*3600;
  settings.position.pid.p_gain=.25;
  hal.set_bits_atomic=set_bits;hal.f_step_timer=10000000;hal.stepper.enable=enable;hal.stepper.go_idle=idle;hal.stepper.wake_up=wake;
  hal.stepper.cycles_per_tick=cycles;hal.stepper.pulse_start=pulse;hal.spindle_data.get=get_spindle;

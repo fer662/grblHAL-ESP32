@@ -605,6 +605,7 @@ void NormalOperationMode::createJogModeButton() {
   lv_obj_set_style_text_align(jogModeLabel, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_center(jogModeLabel);
   LVCallbackWrapper::add(jogModeButton, LV_EVENT_CLICKED, [this](lv_event_t *) {
+    if (moveStep == MOVE_STEP_RAPIDS) return;
     jogContinuous = !jogContinuous;
     updateJogModeButton();
     Buzzer::getInstance().beepSuccess();
@@ -613,9 +614,13 @@ void NormalOperationMode::createJogModeButton() {
 }
 
 void NormalOperationMode::updateJogModeButton(bool force) {
-  if (force || lastJogContinuous != jogContinuous) {
-    lv_label_set_text(jogModeLabel, jogContinuous ? "JOG MODE\n\nHOLD" : "JOG MODE\n\nSINGLE\nSTEP");
+  const bool rapid = moveStep == MOVE_STEP_RAPIDS;
+  if (force || lastJogContinuous != jogContinuous || lastJogRapid != rapid) {
+    if (rapid) lv_obj_add_state(jogModeButton, LV_STATE_DISABLED);
+    else lv_obj_clear_state(jogModeButton, LV_STATE_DISABLED);
+    lv_label_set_text(jogModeLabel, (rapid || jogContinuous) ? "JOG MODE\n\nHOLD" : "JOG MODE\n\nSINGLE\nSTEP");
     lastJogContinuous = jogContinuous;
+    lastJogRapid = rapid;
   }
 }
 
@@ -934,7 +939,12 @@ void NormalOperationMode::updateStepButton(bool force) {
     if (moveStep != lastMoveStepValue || measure != lastMeasureValue || force) {
       lv_obj_t *stepLabel = lv_obj_get_child(stepButton, 0);
       char buf[16];
-      if (measure == MEASURE_METRIC) {
+      lv_obj_t *title = lv_obj_get_child(stepButton, 1);
+      lv_label_set_text(title, moveStep == MOVE_STEP_RAPIDS ? "RAPIDS" : "STEP");
+      if (moveStep == MOVE_STEP_RAPIDS) {
+        lv_obj_set_style_bg_color(stepButton, APP_COLOR_WARNING, 0);
+        snprintf(buf, sizeof(buf), "HOLD TO MOVE");
+      } else if (measure == MEASURE_METRIC) {
         lv_obj_set_style_bg_color(stepButton, APP_COLOR_INFO, 0);
         sprintf(buf, "%0.2fmm", convertDuprToMmPerTurn(moveStep));
       } else {

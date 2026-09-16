@@ -133,6 +133,9 @@ int main(void)
     c.z_max=10;m.x_max_rate=300;
     assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
     CLOSE(p.full_begin,2.945);CLOSE(p.full_end,7.060);CLOSE(p.exit_end,9.880);
+    m.x_max_rate=300;m.x_acceleration=500;
+    assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
+    CLOSE(p.full_begin,2.825);CLOSE(p.full_end,7.180);CLOSE(p.exit_end,9.880);
     m.x_max_rate=0;assert(!h5_cycle_plan(&c,&m,&p,error,sizeof error));
     puts("PASS: moving-entry geometry, physical rate feasibility, fixed phase, all profile bounds and clearance");
 }

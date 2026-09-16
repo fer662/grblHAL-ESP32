@@ -8,6 +8,7 @@ root = Path(__file__).resolve().parents[1]
 source = (root / 'components/h5_ui/ui.cpp').read_text()
 functions = source[source.index('static void send(const char *line)'):source.index('void manualMoveAxis(')]
 functions += source[source.index('void markAxis0('):source.index('void setAxisDisabled(')]
+functions += source[source.index('void buttonMoveStepPress('):source.index('void h5_ui_sync(')]
 harness = r'''
 #include <cassert>
 #include <cmath>
@@ -21,14 +22,16 @@ harness = r'''
 using String = std::string;
 struct Axis {char name; long motorSteps, screwPitch, pos=0, leftStop=LONG_MAX, rightStop=LONG_MIN; bool disabled=false;};
 Axis x={'X',1200,10000}, z={'Z',400,20000};
-struct Status {bool ready=true, moving=false, held=false; int alarm=0; uint32_t command_id=0,completed_id=0,sampled_completed_id=0;float work_offset[3]={};unsigned work_system=0;float steps_per_mm[3]={1200,0,200};long position[3]={0,0,0};};
+struct Status {bool ready=true, moving=false, held=false; int alarm=0; uint32_t command_id=0,completed_id=0,sampled_completed_id=0;float max_rate[3]={300,0,960};float work_offset[3]={};unsigned work_system=0;float steps_per_mm[3]={1200,0,200};long position[3]={0,0,0};};
 static Status status, published;
 static String notice;
 static uint32_t last_command, single_jog_id;
 static Axis *held_axis;
 static bool continuous_jog, jogContinuous=true;
 static bool jogLimitsEnabled=true, updating;
-static constexpr int MEASURE_METRIC=0;
+static constexpr int MEASURE_METRIC=0, MEASURE_INCH=1;
+static constexpr long MOVE_STEP_RAPIDS=0, MOVE_STEP_1=10000, MOVE_STEP_2=1000, MOVE_STEP_3=100;
+static constexpr long MOVE_STEP_IMP_1=25400, MOVE_STEP_IMP_2=2540, MOVE_STEP_IMP_3=254;
 static int measure=MEASURE_METRIC;
 static long moveStep=10000;
 static constexpr float MAX_TRAVEL_MM_X=100, MAX_TRAVEL_MM_Z=300;
@@ -97,6 +100,35 @@ int main() {
   for(int i=0;i<20;i++)h5_ui_jog(&z,-1,true);
   assert(submitted.size()==1);h5_ui_jog(&z,-1,false);assert(!cancels && !held_axis);
  }
+ // Four-position selection in both units; changing units retains Rapids.
+ for(int unit:{0,1}) {
+  reset();measure=unit;moveStep=unit?MOVE_STEP_IMP_1:MOVE_STEP_1;
+  buttonMoveStepPress();assert(moveStep==(unit?MOVE_STEP_IMP_2:MOVE_STEP_2));
+  buttonMoveStepPress();assert(moveStep==(unit?MOVE_STEP_IMP_3:MOVE_STEP_3));
+  buttonMoveStepPress();assert(moveStep==MOVE_STEP_RAPIDS);
+  buttonMeasurePress();assert(moveStep==MOVE_STEP_RAPIDS);buttonMeasurePress();
+  buttonMoveStepPress();assert(moveStep==(unit?MOVE_STEP_IMP_1:MOVE_STEP_1));
+ }
+ // Rapids is always hold-to-run at the latest native max rate, even in Single.
+ for(bool single:{false,true}) for(Axis *axis:{&x,&z}) for(int sign:{-1,1}) {
+  reset();jogContinuous=!single;moveStep=MOVE_STEP_RAPIDS;
+  published.max_rate[axis==&x?0:2]=234; // Must use settings, not a hard-coded rapid rate.
+  axis->leftStop=axis->motorSteps;axis->rightStop=-axis->motorSteps;
+  h5_ui_jog(axis,sign,true);assert(continuous_jog && !single_jog_id);
+  assert(submitted.back().find("F234.000")!=std::string::npos);
+  assert(fabs(distance())==(axis==&x?1:2));
+  moveStep=MOVE_STEP_1;h5_ui_jog(axis,sign,false);assert(cancels==1);
+ }
+ reset();moveStep=MOVE_STEP_RAPIDS;jogLimitsEnabled=false;x.leftStop=0;
+ h5_ui_jog(&x,1,true);assert(distance()==100);h5_ui_jog(&x,1,false);assert(cancels==1);
+ reset();moveStep=MOVE_STEP_RAPIDS;follow=true;h5_ui_jog(&x,1,true);
+ assert(manual.empty() && submitted.empty() && !held_axis);
+ for(float invalid:{0.0f,-1.0f,INFINITY,NAN}) {
+  reset();moveStep=MOVE_STEP_RAPIDS;published.max_rate[0]=invalid;
+  h5_ui_jog(&x,1,true);assert(submitted.empty() && !held_axis);
+ }
+ // Ordinary X jog remains 60 mm/min with the new machine maximum.
+ reset();h5_ui_jog(&x,1,true);assert(submitted.back().find("F60.000")!=std::string::npos);
  // Fast taps cannot queue steps based on stale position, even if ACK precedes publication.
  reset();jogContinuous=false;h5_ui_jog(&x,1,true);h5_ui_jog(&x,1,false);
  h5_ui_jog(&x,1,true);assert(submitted.size()==1 && !held_axis);

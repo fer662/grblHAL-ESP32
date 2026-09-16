@@ -1,5 +1,28 @@
 # Touchscreen improvements
 
+## Implemented in 0.3.20
+
+STEP cycles through 1 / 0.1 / 0.01 mm / **RAPIDS** (or the existing three inch
+increments / RAPIDS). Rapids is saved with the other UI preferences and survives
+unit changes. The control becomes amber and reads RAPIDS / HOLD TO MOVE.
+The center shows Hold and disables its toggle until Rapids is deselected;
+the previous Hold/Single preference is retained.
+
+Rapids uses the native axis maximum from the current status snapshot: normally
+X 300 mm/min (5 mm/s), Z 960 mm/min (16 mm/s). Ordinary jog feeds remain X 60 and
+Z 960 mm/min. Every rapid requires a held direction; release or slide-out cancels
+with native deceleration. The Jog Limits switch and disabled-axis guards apply.
+Rapid jogging requires stopping an armed assisted operation first.
+
+Normal X acceleration is now 500 mm/s² (previously 25), an operator-requested
+trial value applying to all X motion, not only Rapids. The theoretical ramp to
+5 mm/s is 10 ms, with 0.025 mm acceleration distance. Release/touch processing
+latency adds to the stopping distance; the machine response has not been measured.
+X maximum stays 5 mm/s (900 motor RPM with the configured 1 mm screw and 3:1
+reduction). No current, gearing, pulse timing or calibration changes.
+
+Actual LVGL render: [Rapids](docs/rapids-0320.png).
+
 ## Implemented in 0.3.13
 
 Both left-pane columns now use 80-pixel button heights. The header and upper

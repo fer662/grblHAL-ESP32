@@ -24,7 +24,7 @@ static bool valid_preferences(const h5_preferences_t *p)
 {
     return p->version == 1 && p->mode >= 0 && p->mode <= 8 && p->mode != 1 && p->measure >= 0 &&
            p->measure <= 2 && p->pitch_type >= 0 && p->pitch_type <= 2 && abs(p->pitch) <= 10000000 &&
-           p->move_step > 0 && p->move_step <= 10000000 && p->passes > 0 && p->passes <= 999 &&
+           p->move_step >= 0 /* zero selects hold-to-run Rapids */ && p->move_step <= 10000000 && p->passes > 0 && p->passes <= 999 &&
            p->starts > 0 && p->starts <= 124 && isfinite(p->cone_ratio) && fabsf(p->cone_ratio) <= 10000 &&
            p->aux_forward <= 1 && p->sound <= 1 && p->jog_mode <= 1;
 }
@@ -102,7 +102,7 @@ void h5_storage_upgrade_motion(void)
     if (!ready || H5_BENCH_ONLY) return;
     uint8_t revision = 0;
     esp_err_t result = nvs_get_u8(handle, "motion_rev", &revision);
-    if ((result != ESP_OK && result != ESP_ERR_NVS_NOT_FOUND) || revision >= 2) return;
+    if ((result != ESP_OK && result != ESP_ERR_NVS_NOT_FOUND) || revision >= 3) return;
     uint32_t before = writes;
     bool changed = false;
     if (revision < 1 && settings.axis[Z_AXIS].acceleration == 50.0f * 3600.0f) {
@@ -110,9 +110,14 @@ void h5_storage_upgrade_motion(void)
         if (settings_store_setting(Setting_AxisAcceleration + Z_AXIS, value) != Status_OK) return;
         changed = true;
     }
-    if (settings.axis[X_AXIS].max_rate == 60.0f) {
+    if (revision < 2 && settings.axis[X_AXIS].max_rate == 60.0f) {
         char value[] = "300";
         if (settings_store_setting(Setting_AxisMaxRate + X_AXIS, value) != Status_OK) return;
+        changed = true;
+    }
+    if (settings.axis[X_AXIS].acceleration == 25.0f * 3600.0f) {
+        char value[] = "500";
+        if (settings_store_setting(Setting_AxisAcceleration + X_AXIS, value) != Status_OK) return;
         changed = true;
     }
     if (changed) {
@@ -120,7 +125,7 @@ void h5_storage_upgrade_motion(void)
         // Do not mark the upgrade complete if the core blob did not reach flash.
         if (writes == before) return;
     }
-    if (nvs_set_u8(handle, "motion_rev", 2) != ESP_OK || nvs_commit(handle) != ESP_OK)
+    if (nvs_set_u8(handle, "motion_rev", 3) != ESP_OK || nvs_commit(handle) != ESP_OK)
         failures++;
 }
 void h5_storage_poll(void)
