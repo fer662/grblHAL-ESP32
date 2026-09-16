@@ -10,6 +10,12 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
 ## Current scope
 
+**0.3.15 keeps Thread inside its entered Z bounds as well.** Synchronization
+run-in/run-out and the one-step approach now consume space inside the span.
+The preview shows the estimated usable thread region; spans too short for the
+allowances are rejected. Pitch, starts and phase registration remain supported.
+See [bounded threading](ASSISTED_CYCLES.md).
+
 **0.3.14 keeps ordinary turning within its entered Z endpoints.** Turn now uses
 G95 feed per revolution with acceleration/deceleration inside the cut; Thread's
 G33 lead-in/run-out is unchanged. Non-thread profiles also omit the shared one-step

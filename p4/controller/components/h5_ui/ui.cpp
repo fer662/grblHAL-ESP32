@@ -247,21 +247,25 @@ static void preview_cycle()
     lv_obj_move_foreground(cycle_panel);
     lv_obj_t *label=lv_label_create(cycle_panel);
     lv_obj_set_width(label,940);
+    char thread_region[180] = "";
+    if (plan.indexed)
+        snprintf(thread_region,sizeof(thread_region),
+            "Steady-pitch region (est.): Z %.3f to %.3f mm\n"
+            "Usable thread (est.): %.3f mm; margins are inside Z limits.\n",
+            plan.thread_start,plan.thread_end,fabs(plan.thread_end-plan.thread_start));
     char text[1000];
     snprintf(text,sizeof(text),
         "%s cycle preview\n\n%u depth passes x %u starts | lead %.4f mm/rev\n"
-        "Machining %c: %.3f to %.3f mm\nApproach: %.3f mm | End: %.3f mm\n"
+        "%c travel bounds: %.3f to %.3f mm\nApproach: %.3f mm | End: %.3f mm\n"
         "%c infeed: %.3f to %.3f mm | Retracted: %.3f mm\n"
-        "Lead-in: %.3f mm | Run-out: %.3f mm\n\n"
+        "Run-in: %.3f mm | Run-out: %.3f mm\n%s\n"
         "Keep spindle between 30 and %.0f RPM in the current direction.\n"
         "Coordinates above are machine coordinates; X is radial.\n"
-        "%s\n"
+        "Cutting-axis travel stays within bounds; clearance retract is separate.\n"
         "STOP decelerates and cancels the pass; it does not resume mid-pass.",
         h5_cycle_name(preview_config.operation),preview_config.passes,plan.starts,plan.lead,
         plan.cut_axis,plan.cut_start,plan.cut_end,plan.approach,plan.finish,plan.depth_axis,plan.depth_start,plan.depth_end,plan.clearance,
-        plan.lead_in,plan.run_out,preview_config.rpm_limit,
-        plan.indexed ? "Thread approach, run-out and retract extend beyond machining bounds." :
-        "Cutting-axis moves stay within bounds; tool-clearance retract may extend beyond them.");
+        plan.lead_in,plan.run_out,thread_region,preview_config.rpm_limit);
     lv_label_set_text(label,text); lv_obj_align(label,LV_ALIGN_TOP_LEFT,5,5);
     lv_obj_t *run=cycle_run=lv_btn_create(cycle_panel); lv_obj_set_size(run,300,65); lv_obj_align(run,LV_ALIGN_BOTTOM_RIGHT,-10,-10);
     lv_obj_t *run_text=lv_label_create(run); lv_label_set_text(run_text,"RUN BENCH CYCLE"); lv_obj_center(run_text);

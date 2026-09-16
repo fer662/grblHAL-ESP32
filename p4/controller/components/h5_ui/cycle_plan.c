@@ -46,8 +46,8 @@ bool h5_cycle_plan(const h5_cycle_config_t *c, const h5_cycle_machine_t *m, h5_c
     bool face = p->config.operation == H5_FACE, cut = p->config.operation == H5_CUT;
     p->cut_axis = face || cut ? 'X' : 'Z';
     p->depth_axis = face || cut ? 'Z' : 'X';
-    // Only threading needs phase registration and travel outside the cut for
-    // synchronization. Ordinary turning uses bounded G95 feed like facing.
+    // Thread needs phase registration; its synchronization travel must fit
+    // inside the entered bounds. Ordinary turning uses G95 feed like facing.
     p->indexed = p->config.operation == H5_THREAD;
     double rate = face || cut ? m->x_max_rate : m->z_max_rate;
     double steps = face || cut ? m->x_steps_mm : m->z_steps_mm;
@@ -72,9 +72,18 @@ bool h5_cycle_plan(const h5_cycle_config_t *c, const h5_cycle_machine_t *m, h5_c
         p->lead_in = ceil((fmax(2 * p->lead, 4 * deficit + .25 * v) + .01) * steps) / steps;
         p->run_out = ceil((deficit + .25 * v + .01) * steps) / steps;
     }
-    p->approach = p->cut_start - p->direction * p->lead_in;
-    p->finish = p->cut_end + p->direction * p->run_out;
-    p->takeup = p->approach - (p->indexed ? p->direction / steps : 0);
+    p->approach = p->takeup = p->cut_start;
+    p->finish = p->cut_end;
+    if (p->indexed) {
+        // Return to the boundary, then take up one step in the cutting
+        // direction. Acceleration and braking consume usable thread length;
+        // neither is permission to travel beyond a cleared shoulder.
+        p->approach += p->direction / steps;
+        p->thread_start = p->approach + p->direction * p->lead_in;
+        p->thread_end = p->finish - p->direction * p->run_out;
+        if ((p->thread_end - p->thread_start) * p->direction < 1 / steps - 1e-9)
+            return fail(error, size, "Thread span too short for sync margins; reduce RPM/pitch/starts or revise bounds");
+    }
     if (cut)
         p->depth_start = p->depth_end = p->clearance = m->z;
     if (p->config.operation == H5_ELLIPSE) {
@@ -112,9 +121,10 @@ double h5_cycle_depth(const h5_cycle_plan_t *p, unsigned pass)
 }
 unsigned h5_cycle_phase(const h5_cycle_plan_t *p, unsigned start)
 {
-    // Reference the cutting start, independent of the lead-in distance. Choose
-    // each start directly, avoiding cumulative rounding with e.g. seven starts.
-    long phase = lround(1200.0 * ((double)start / p->starts - p->lead_in / p->lead));
+    // Reference the entered start bound, regardless of the approach offset.
+    // Choose each start directly to avoid cumulative rounding (e.g. seven starts).
+    double offset = p->direction * (p->approach - p->cut_start);
+    long phase = lround(1200.0 * ((double)start / p->starts + offset / p->lead));
     return (unsigned)((phase % 1200 + 1200) % 1200);
 }
 

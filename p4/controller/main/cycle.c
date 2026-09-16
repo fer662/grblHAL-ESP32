@@ -243,12 +243,12 @@ static void poll_cycle(void)
         h5_critical_enter(&lock, 2000 + __LINE__);
         owns_stream = true;
         h5_critical_exit(&lock);
-        char info[240];
+        char info[320];
         snprintf(info, sizeof(info),
                  "[H5PLAN:LEAD:%.6f|LEAD_IN:%.6f|RUN_OUT:%.6f|APPROACH:%.6f|FINISH:%.6f|CLEARANCE:%.6f|RPM_"
-                 "LIMIT:%.3f]\r\n",
+                 "LIMIT:%.3f|THREAD_START:%.6f|THREAD_END:%.6f]\r\n",
                  plan.lead, plan.lead_in, plan.run_out, plan.approach, plan.finish, plan.clearance,
-                 config.rpm_limit);
+                 config.rpm_limit, plan.thread_start, plan.thread_end);
         hal.stream.write(info);
     }
     if (sys.alarm) {

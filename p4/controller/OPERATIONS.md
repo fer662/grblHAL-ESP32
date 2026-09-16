@@ -11,7 +11,7 @@ a separate disconnected, enable-locked build.
 | Cone | Gearbox motion with X/Z slope `-ratio/2 × auxiliary-direction sign`, clipped to both axes' bounds. X is radial. |
 | Async | Z advances at signed configured mm/s using normal acceleration, with manual override and resume. |
 | Turn | Repeated G95 feed-per-revolution Z cuts with linear X depth progression and clearance returns. Acceleration and deceleration stay within the entered Z endpoints. |
-| Thread | Indexed G33 Z cuts with lead = pitch × starts, lead-in/run-out and phase registration for each start at every depth. |
+| Thread | Indexed G33 Z cuts with lead = pitch × starts and phase registration. Run-in/run-out fit inside the Z bounds and reduce estimated usable thread length. |
 | Face | Repeated X cuts with Z depth progression and clearance; native G95 feed accelerates and decelerates at the specified X endpoints. |
 | Cut | Progressively deeper X plunges, returning to the X start each pass; Z remains fixed. |
 | Ellipse | Scaled quarter-ellipse X/Z paths per depth, retaining the original spindle-progress parameterization and auxiliary direction. Chords feed native lookahead. |
@@ -47,8 +47,11 @@ The last depth is retained. It never jumps out of a cut halfway through.
   counts/revolution; limits remain X 60 and Z 960 mm/min, acceleration 25/50 mm/s².
 - X is radial; operation previews show machine mm, independent of readout zeros,
   units or diameter display. G18 is the supported arc plane; Y and G76 are rejected.
-- Thread reserves acceleration lead-in and run-out outside the cutting bounds.
-  The preview must fit the actual available travel and clearance before cutting.
+- Thread reserves acceleration run-in and braking run-out inside the Z bounds.
+  Return targets the start bound, takes up one step inward, and G33 ends at the
+  opposite bound. The preview reports the estimated steady-pitch region. If the
+  remaining region is less than one Z step, the cycle is rejected before motion.
+  Depth-axis clearance retracts remain separate from cutting-axis travel bounds.
 - Turn/Face/Cut use feed-per-revolution profiles with acceleration at their endpoints.
   They are not indexed threading cuts. As of 0.3.14, all non-thread profiles also
   omit the one-step approach beyond the cutting-axis bound. The existing 0.5 mm
@@ -65,7 +68,7 @@ The last depth is retained. It never jumps out of a cut halfway through.
   phase** until the spindle reaches the retained axis registration (at most one
   revolution). A newly armed feed follows immediately, subject to step resolution.
   Low-speed position following is assisted feed; indexed Thread recipes keep
-  their existing G33 lead-in/phase behavior. Profile cycles retain their 30 RPM minimum.
+  G33 phase registration with synchronization margins inside the Z bounds. Profile cycles retain their 30 RPM minimum.
 - The supported tracking assumption is physically gradual spindle speed change.
   Sudden synthetic stop/reverse tests exercise cancellation; they do not establish
   loaded tracking capability for arbitrary spindle acceleration.

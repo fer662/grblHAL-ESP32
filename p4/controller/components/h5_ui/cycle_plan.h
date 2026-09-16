@@ -22,14 +22,16 @@ typedef struct {
     h5_cycle_config_t config;
     int direction, spindle_direction;
     double lead, lead_in, run_out, cut_start, cut_end, approach, finish;
+    double thread_start, thread_end; // Estimated steady-pitch region inside Z bounds.
     double depth_start, depth_end, clearance, takeup;
     unsigned starts, segments;
     char cut_axis, depth_axis;
     bool indexed;
 } h5_cycle_plan_t;
 
-// Pure geometry: millimeters are machine coordinates, X is radial. The stop
-// rectangle is the cutting area, not a homed hard-travel envelope.
+// Pure geometry: millimeters are machine coordinates, X is radial. Cutting-axis
+// targets stay inside the entered bounds, including Thread synchronization.
+// Depth-axis clearance retracts are separate; this is not a homed travel envelope.
 bool h5_cycle_plan(const h5_cycle_config_t *, const h5_cycle_machine_t *, h5_cycle_plan_t *, char *error, size_t size);
 double h5_cycle_depth(const h5_cycle_plan_t *, unsigned pass);
 void h5_cycle_point(const h5_cycle_plan_t *, unsigned pass, unsigned segment, double *x, double *z, double *feed);

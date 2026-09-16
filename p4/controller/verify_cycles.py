@@ -98,19 +98,22 @@ def validate_cycle(lines, before, passes, starts, pitch, rpm, forward, length, t
     direction = (1 if rpm*pitch > 0 else -1)
     z_start, z_end = (0, length) if direction > 0 else (length, 0)
     x_start, x_end = (0, .1) if forward else (.1, 0)
-    assert abs(float(plan['APPROACH'])-(z_start-direction*lead_in)) < 1e-6
+    approach_offset = direction*(float(plan['APPROACH'])-z_start)
+    assert abs(approach_offset-(.005 if threading else 0)) < 1e-6
+    assert abs(float(plan['FINISH'])-z_end) < 1e-6
     if threading:
-        assert (float(plan['FINISH'])-z_end)*direction > 0
+        assert abs(float(plan['THREAD_START'])-(float(plan['APPROACH'])+direction*lead_in)) < 1e-6
+        assert abs(float(plan['THREAD_END'])-(z_end-direction*float(plan['RUN_OUT']))) < 1e-6
+        assert (float(plan['THREAD_END'])-float(plan['THREAD_START']))*direction > 0
     else:
         assert lead_in == 0 and float(plan['RUN_OUT']) == 0
         assert abs(float(plan['FINISH'])-z_end) < 1e-6
     done = [fields(line) for line in lines if line.startswith('[H5DONE:')]
     expected = ['Setup', 'Retract', 'Approach', 'Take up'] + ['Infeed', 'Register', 'Spindle', 'Cut', 'Retract', 'Return', 'Take up']*(passes*starts) + ['Return to start', 'Finish infeed', 'Restore phase', 'Finish']
     assert [item['STAGE'] for item in done] == expected, [item['STAGE'] for item in done]
-    if not threading:
-        for item in done:
-            if item['STAGE'] in ('Approach', 'Take up', 'Cut', 'Return', 'Return to start'):
-                assert -.002501 <= float(item['Z']) <= length+.002501, item
+    for item in done:
+        if item['STAGE'] in ('Approach', 'Take up', 'Cut', 'Return', 'Return to start'):
+            assert -.002501 <= float(item['Z']) <= length+.002501, item
     cuts = [item for item in done if item['STAGE'] == 'Cut']
     for i, cut in enumerate(cuts):
         assert int(cut['H5DONE'].split(':')[-1]) == i//starts+1
@@ -133,9 +136,12 @@ def validate_cycle(lines, before, passes, starts, pitch, rpm, forward, length, t
         assert int(sync['PULSES']) == expected_pulses
         assert sync['FAULT'] == 'NONE'
         reference = (i % starts)*1200/starts
-        errors = [(encoder-reference)*lead/1200-(step/200-lead_in)
-                  for step, encoder, _ in points if lead_in <= step/200 <= lead_in+length]
-        assert len(errors) >= 20
+        # Only assess pitch inside the estimated steady region. Acceleration
+        # and braking now consume part of the entered span, not extra travel.
+        errors = [(encoder-reference)*lead/1200-(step/200+approach_offset)
+                  for step, encoder, _ in points
+                  if lead_in <= step/200 <= length-approach_offset-float(plan['RUN_OUT'])]
+        assert len(errors) >= 2, 'Need a longer steady region for a phase trace'
         origin = round(errors[0]/lead)*lead
         peak = max(abs(error-origin) for error in errors)
         assert peak <= .015+2*lead/1200, (i, peak)
@@ -201,9 +207,9 @@ def cancelled(stage, via_ui):
     assert before['X'] == after['X'] and before['Z'] == after['Z']
     assert any('ACTIVE:0' in line for line in command('$P4CYCLE'))
     if stage == 'Index':
-        assert abs(int(after['Z'].split(',')[1])/200+3.135) < .005, 'Moved while waiting for index'
+        assert abs(int(after['Z'].split(',')[1])/200-.005) < .002501, 'Moved while waiting for index'
     if stage == 'Cut':
-        assert int(after['Z'].split(',')[1])/200 < 7.96, 'STOP allowed the cut to finish'
+        assert int(after['Z'].split(',')[1])/200 < 6, 'STOP allowed the cut to finish'
     print(f'PASS CANCEL: {stage}, via '+('LVGL STOP' if via_ui else 'realtime cancel')+'; decelerated, reset, no queued return', flush=True)
 
 
@@ -211,12 +217,12 @@ def rpm_limit():
     command('$P4SIM=300'); time.sleep(.3)
     command('G21G8G90G53G0X0Z0'); idle()
     command('$P4SIMRAMP=450,100,2500')
-    command('$P4CYCLE=1,0.5,1,2,1,0,0.1,0,6,375')
+    command('$P4CYCLE=1,0.5,1,2,1,0,0.1,0,10,375')
     lines = receive(lambda line: 'GrblHAL' in line, 15)
     assert any('Spindle outside RPM range' in line for line in lines)
     time.sleep(.3); idle()
     data = diag()
-    assert int(data['Z'].split(',')[1])/200 < 7.96, 'RPM limit allowed the cut to finish'
+    assert int(data['Z'].split(',')[1])/200 < 10, 'RPM limit allowed the cut to finish'
     assert any('ACTIVE:0' in line and 'Spindle outside RPM range' in line for line in command('$P4CYCLE'))
     command('$P4SIM=OFF')
     print('PASS: RPM ceiling cancels during cutting and retains the reason for the operator.', flush=True)

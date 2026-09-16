@@ -442,6 +442,38 @@ OTA and loaded-machine acceptance are pending. G95 ramps feed inside the cut
 and does not preserve thread phase, so endpoint surface finish needs operator
 assessment. No remote motion commands were issued.
 
+## 0.3.15 threading synchronization inside the entered Z span
+
+Operator identified that retaining Thread's external lead-in/run-out could exceed
+the length cleared by a preceding Turn cycle. The committed H5 baseline clamps
+its cutting pass through `posFromSpindle(..., true)`, although its return included
+one-step overshoot. The larger external synchronization margins were introduced
+by this port and were not compatible with the intended limit semantics.
+
+Thread now returns to the start bound, takes up one step inward, and emits G33
+to the opposite bound. Existing synchronization and braking margins consume
+space inside the span. The estimated steady-pitch region is exposed in the
+preview and H5PLAN diagnostics; fewer than one usable Z step rejects the cycle
+before movement. Phase registration remains referenced to the entered start
+bound using the actual approach offset, independent of the selected RPM ceiling.
+Multi-start lead and phase spacing are retained. Depth-axis tool-clearance
+retracts remain separate and unchanged.
+
+Host geometry and production-emitter checks passed for both directions, multiple
+passes, multi-start phase arithmetic, phase invariance under changed margins,
+short-span rejection and the other profile operations. Existing core cancellation
+checks passed. The actual production preview construction/text was extracted into
+a temporary LVGL host harness; its framebuffer was inspected and text-versus-RUN
+button overlap asserted. The offline device verifier now expects in-bound Thread
+positions and measures phase only in the estimated steady region; syntax checked,
+not run on the connected machine. Core and pulse-driver code are unchanged.
+
+The normal IDF 5.5.2 build passed (22% OTA slot free). Application SHA-256:
+`ce2c696391fed1dbefcbf4e428f2feccc66c3e8820734315e7cf51b4f91bb109`.
+No remote motion commands or OTA upload were issued. Loaded thread phase/finish
+acceptance remains pending. Run-in/run-out occur at cutting depth and are not
+promised as usable thread; the preview's usable region is an estimate.
+
 ## Hardware acceptance still required
 
 - [ ] Inspect external STEP/DIR pulse widths, jitter, skew and setup/hold at the connector.

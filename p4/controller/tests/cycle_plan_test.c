@@ -13,15 +13,20 @@ int main(void)
     assert(h5_cycle_plan(&c,&m,&p,error,sizeof(error)));
     assert(p.indexed);
     CLOSE(p.lead,1); CLOSE(p.lead_in,2.95); CLOSE(p.run_out,1.87);
-    CLOSE(p.approach,7.05); CLOSE(p.finish,21.87); CLOSE(p.takeup,7.045);
+    CLOSE(p.approach,10.005); CLOSE(p.finish,20); CLOSE(p.takeup,10);
+    CLOSE(p.thread_start,12.955); CLOSE(p.thread_end,18.13);
     CLOSE(p.clearance,-1.5); CLOSE(h5_cycle_depth(&p,0),-.5); CLOSE(h5_cycle_depth(&p,3),1);
-    assert(h5_cycle_phase(&p,0)==60); assert(h5_cycle_phase(&p,1)==660);
+    assert(h5_cycle_phase(&p,0)==6); assert(h5_cycle_phase(&p,1)==606);
     for (int spindle=-1;spindle<=1;spindle+=2) for(int pitch=-1;pitch<=1;pitch+=2) {
         m.rpm=300*spindle; c.pitch=.5*pitch;
         assert(h5_cycle_plan(&c,&m,&p,error,sizeof(error)));
         assert(p.direction==spindle*pitch);
-        assert((p.cut_start-p.approach)*p.direction > 0);
-        assert((p.finish-p.cut_end)*p.direction > 0);
+        CLOSE((p.approach-p.cut_start)*p.direction,.005);
+        CLOSE(p.finish,p.cut_end); CLOSE(p.takeup,p.cut_start);
+        assert(p.approach>=c.z_min && p.approach<=c.z_max);
+        assert(p.thread_start>=c.z_min && p.thread_start<=c.z_max);
+        assert(p.thread_end>=c.z_min && p.thread_end<=c.z_max);
+        assert((p.thread_end-p.thread_start)*p.direction>0);
         CLOSE(h5_cycle_depth(&p,3),1);
     }
     c.aux_forward=false; assert(h5_cycle_plan(&c,&m,&p,error,sizeof(error)));
@@ -29,9 +34,15 @@ int main(void)
     c.starts=7; c.pitch=.1;
     assert(h5_cycle_plan(&c,&m,&p,error,sizeof(error)));
     for(unsigned i=0;i<7;i++) {
-        double phase=h5_cycle_phase(&p,i)/1200.0+p.lead_in/p.lead-(double)i/7;
+        double phase=h5_cycle_phase(&p,i)/1200.0-p.direction*(p.approach-p.cut_start)/p.lead-(double)i/7;
         assert(fabs(phase-round(phase)) <= .5/1200+.0000001);
     }
+    unsigned phases[7]; for(unsigned i=0;i<7;i++) phases[i]=h5_cycle_phase(&p,i);
+    double previous_lead_in=p.lead_in;
+    c.rpm_limit=600; assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
+    assert(p.lead_in>previous_lead_in);
+    for(unsigned i=0;i<7;i++) assert(h5_cycle_phase(&p,i)==phases[i]);
+    c.rpm_limit=360;
     c.threading=false; assert(h5_cycle_plan(&c,&m,&p,error,sizeof(error))); CLOSE(p.lead,.1); assert(p.starts==1);
     h5_cycle_config_t valid=c;
     c.pitch=NAN; assert(!h5_cycle_plan(&c,&m,&p,error,sizeof(error))); c=valid;
@@ -93,5 +104,22 @@ int main(void)
         .x_min=0,.x_max=1,.z_min=0,.z_max=.005,.rpm_limit=500};
     m.rpm=-400; assert(h5_cycle_plan(&c,&m,&p,error,sizeof(error)));
     CLOSE(p.approach,.005); CLOSE(p.takeup,.005); CLOSE(p.finish,0);
-    puts("PASS: bounded non-thread profiles, preserved clearance, thread phase and invalid envelopes");
+    // Thread reserves synchronization space inside the span, never outside it.
+    c.operation=H5_THREAD; c.z_max=10;
+    assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
+    CLOSE(p.takeup,10); CLOSE(p.approach,9.995); CLOSE(p.finish,0);
+    CLOSE(p.thread_start,9.745); CLOSE(p.thread_end,.230);
+    double reserved=p.lead_in+p.run_out+.005;
+    for(int sign=-1;sign<=1;sign+=2) {
+        c.pitch=.1*sign;
+        c.z_max=reserved; assert(!h5_cycle_plan(&c,&m,&p,error,sizeof error));
+        c.z_max=reserved+.0025; assert(!h5_cycle_plan(&c,&m,&p,error,sizeof error));
+        c.z_max=reserved+.005; assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
+        CLOSE((p.thread_end-p.thread_start)*p.direction,.005);
+    }
+    // More starts consume more synchronization room; never silently trim pitch.
+    c.z_max=2; c.pitch=.1; c.starts=1;
+    assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
+    c.starts=7; assert(!h5_cycle_plan(&c,&m,&p,error,sizeof error));
+    puts("PASS: all profile bounds, inward thread margins, short-span rejection, phase and clearance");
 }

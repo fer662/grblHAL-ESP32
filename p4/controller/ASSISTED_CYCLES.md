@@ -5,6 +5,25 @@ Turn/Thread geometry and records its earlier validation. See [OPERATIONS.md](OPE
 for Face, Cut, Ellipse, Gearbox, Cone, Async, parameter edits and the current
 operating limits. See [PORT_PROGRESS.md](PORT_PROGRESS.md) for final regression status.
 
+## Change in 0.3.15: bounded threading
+
+The original committed H5 cut used `posFromSpindle(..., true)` to clamp to its
+stops, although it requested a one-step overshoot on return. The P4 port added
+longer Thread/Turn lead-in/run-out outside the entered span. That was incompatible
+with clearing a length by turning and then threading that same length.
+
+Thread now treats the entered Z endpoints as its travel bounds. The one-step
+approach and the synchronization/braking allowances fit inside them. This reduces
+the estimated usable thread length instead of extending travel. A setup with less
+than one Z step left between the allowances is rejected before motion. The depth-
+axis tool-clearance retract is a separate, unchanged movement.
+
+[Actual LVGL preview with simulated readings](docs/thread-cycle-0315.png).
+The steady-pitch region is an estimate from the existing margins, not a measured
+thread-quality guarantee. The tool is at cutting depth during run-in/run-out, so
+those portions are not promised as usable thread. There is no automatic pull-out
+chamfer. Loaded phase/finish acceptance remains pending.
+
 ## Change in 0.3.14
 
 Turn now uses G95 feed per revolution and stops at the entered Z endpoints.
@@ -12,7 +31,8 @@ Its acceleration/deceleration occur inside that span, without Thread's lead-in,
 run-out or index registration. Face and Cut already used G95. All non-thread
 profiles, including Ellipse, now omit the extra one-step approach beyond the
 cutting-axis bounds. The 0.5 mm depth-axis tool-clearance retract is preserved;
-Cut still keeps Z fixed. Thread's G33 geometry and phase behavior are unchanged.
+Cut still keeps Z fixed. Thread was unchanged in that version; 0.3.15 supersedes
+its external lead-in/run-out behavior as described above.
 The preview distinguishes these behaviors. Earlier Thread/Turn bench records
 below describe the pre-0.3.14 implementation where both used G33.
 
@@ -22,7 +42,8 @@ below describe the pre-0.3.14 implementation where both used G33.
    bounds, and the auxiliary direction. Thread also uses the starts setting.
 2. With both axes available and the spindle encoder running, press START.
 3. Review the cycle preview. It shows radial X coordinates, cutting Z bounds,
-   approach position, run-out end, retracted X position and maximum RPM. All
+   approach position, stopping endpoint, estimated usable thread region, retracted
+   X position and maximum RPM. All
    coordinates in this preview are explicitly **machine coordinates in mm**,
    independent of the readout's display origin or selected display units.
 4. RUN BENCH CYCLE copies the configuration to the grbl task. The status line
@@ -41,7 +62,8 @@ requesting firmware update or attempting to jog cancels the active cycle.
 
 The committed H5 baseline's `main/modes/ModeTurn.cpp` supplies the pass order,
 linear radial depth progression, auxiliary-direction choice, 0.5 mm clearance,
-one-step Z backlash approach, return-to-start behavior and multiple-start lead.
+one-step Z approach, return-to-start behavior and multiple-start lead. The
+0.3.15 approach step is inside the entered span rather than outside it.
 The new service uses grblHAL for every move; no old step/task synchronization
 logic or uncommitted H5 motion experiment is used.
 
@@ -49,11 +71,12 @@ For Thread, the generated sequence is:
 
 1. Set metric/radial coordinates and the XZ plane.
 2. Retract X to its clearance position before moving Z to the approach.
-3. Approach Z from the cutting direction, including the original one-step takeup.
+3. Move to the Z start bound, then take up one step inward in the cutting direction.
 4. Move X to the current depth.
 5. Register the spindle phase for this start and select expected spindle direction.
-6. Execute one straight-Z G33 move through lead-in, cutting area and run-out.
-7. Retract X, return Z at clearance, and take up Z in the cutting direction.
+6. Execute one straight-Z G33 move to the opposite Z bound. Run-in and braking
+   consume part of this span; the estimated steady-pitch region is shorter.
+7. Retract X, return Z to the start bound at clearance, and take up one step inward.
 8. Repeat all starts at the same depth before increasing depth.
 9. After the final pass, return Z to the cutting start and X to its initial bound.
 10. Restore zero diagnostic phase, absolute distance mode and feed-per-minute mode.
@@ -63,7 +86,7 @@ or regulate the physical lathe spindle. Feed direction is signed pitch multiplie
 by observed spindle direction. Thread lead is `abs(pitch) * starts`; Turn uses
 one start. X remains radial, including depth and clearance.
 
-### Lead-in, phase and run-out
+### In-bound run-in, phase and run-out
 
 The default preview RPM ceiling is 125% of current measured speed, capped at
 88% of the Z maximum-feed/pitch ratio. It never silently scales thread pitch.
@@ -80,17 +103,21 @@ At the ceiling RPM, with velocity `v = lead * RPM / 60` and Z acceleration `a`:
 
 Distances are rounded upward to Z steps. They remain fixed for every pass in
 the cycle. The earlier backend performs acceleration phase compensation using
-the actual prepared profile. The cycle's requested start phase also subtracts
-`lead-in / lead` revolutions, so the thread reference is at the **cutting start**,
-not the approach position. Each multiple start uses its own rounded fraction
+the actual prepared profile. The cycle's requested start phase adds the inward approach offset divided by
+lead, so registration remains referenced to the **entered start bound**. Changing
+the RPM ceiling changes the estimated usable region, not that phase reference. Each multiple start uses its own rounded fraction
 of a revolution, avoiding accumulated rounding error for counts such as seven
 starts. See [spindle tracking](SPINDLE_TRACKING.md) for the slew assumption and
 scope of the backend measurements.
 
-Machining bounds describe the cutting area. They are **not universal travel
-limits**: Thread takeup, lead-in and run-out deliberately extend beyond them, as
-does the depth-axis tool-clearance retract in profiles that use one. Non-thread
-cutting-axis approach, cutting and return targets remain within their entered bounds.
+For Thread, `approach = start_bound + direction / steps_per_mm`, `takeup =
+start_bound`, and `finish = end_bound`. The estimated steady region starts at
+`approach + direction * run_in` and ends at `finish - direction * run_out`.
+These margins reduce usable length; they never enlarge the Z target span.
+
+All profile cutting-axis approach, cutting and return targets remain within their
+entered bounds. The depth-axis tool-clearance retract can extend beyond that
+axis's depth bounds. These are not universal machine travel limits.
 The preview exposes those extensions. Preflight limits the full requested span,
 including the current position, to the inherited 100 mm X and 300 mm Z values.
 These span checks are not a homed machine envelope or proof of chuck, shoulder
@@ -168,7 +195,7 @@ python3 tests/cycle_commands_test.py
 The host command test executes the production command emitter with a simulated
 bridge and checks Turn/Face/Cut/Ellipse approach, cut and return targets for both
 spindle/pitch signs, both auxiliary directions and multiple passes. It also checks
-unchanged Thread G33/phase commands. These checks do not measure loaded motion.
+bounded Thread G33 commands, inward takeup and multi-start phase registration. These checks do not measure loaded motion.
 
 Device regression (disconnected, enable-locked bench only):
 

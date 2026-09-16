@@ -37,6 +37,9 @@ static void move(unsigned next) {
     if(sscanf(emitted,"G90G94G53G0%c%lf",&axis,&value)==2) position[axis=='X'?0:1]=value;
     else if(sscanf(emitted,"G91G95G1X%lfZ%lfF%lf",&x,&z,&feed)==3) {
         position[0]+=x; position[1]+=z; assert(feed>0);
+    } else if(sscanf(emitted,"G91G33%c%lfK%lf",&axis,&value,&feed)==3) {
+        assert(plan.indexed && fabs(feed-plan.lead)<1e-6);
+        position[axis=='X'?0:1]+=value;
     } else {
         assert(sscanf(emitted,"G91G95G1%c%lfF%lf",&axis,&value,&feed)==3);
         position[axis=='X'?0:1]+=value; assert(fabs(feed-.1)<1e-6);
@@ -50,7 +53,6 @@ int main(void) {
         .x_acceleration=25,.x_max_rate=60,.x_steps_mm=1200};
     char error[96];
     for(unsigned op=H5_TURN;op<=H5_ELLIPSE;op++) {
-        if(op==H5_THREAD) continue;
         for(int spindle=-1;spindle<=1;spindle+=2)
         for(int sign=-1;sign<=1;sign+=2)
         for(unsigned aux=0;aux<2;aux++) {
@@ -64,7 +66,9 @@ int main(void) {
             issue(0); move(1); move(2); move(3);
             for(pass=0;pass<c.passes;pass++) {
                 if(pass && op==H5_ELLIPSE) { move(2); move(3); }
-                move(4); issue(5); assert(!strcmp(emitted,"$P4PHASE=0")); issue(6);
+                move(4); issue(5);
+                if(!plan.indexed) assert(!strcmp(emitted,"$P4PHASE=0"));
+                issue(6);
                 for(segment=0;segment<(op==H5_ELLIPSE?plan.segments:1);segment++) move(7);
                 double expected=op==H5_CUT ? plan.cut_start+(plan.cut_end-plan.cut_start)*(pass+1)/c.passes : plan.cut_end;
                 assert(fabs(position[plan.cut_axis=='X'?0:1]-expected)<1e-4);
@@ -74,17 +78,18 @@ int main(void) {
             if(op==H5_CUT) assert(fabs(position[1]-m.z)<1e-6);
         }
     }
-    // Thread commands retain their original take-up, G33 lead and phase.
+    // Multi-start Thread takes up inside the span and retains G33 lead/registration.
     h5_cycle_config_t c={.threading=true,.passes=4,.starts=2,.pitch=.5,.aux_forward=true,
         .x_min=-1,.x_max=1,.z_min=10,.z_max=20,.rpm_limit=360};
     m.rpm=300; assert(h5_cycle_plan(&c,&m,&plan,error,sizeof error));
-    pass=start=segment=0; issue(2); assert(!strcmp(emitted,"G90G94G53G0Z7.045000"));
-    issue(5); assert(!strcmp(emitted,"$P4PHASE=60"));
-    issue(7); assert(!strcmp(emitted,"G91G33Z14.820000K1.000000"));
-    start=1; issue(5); assert(!strcmp(emitted,"$P4PHASE=660"));
+    pass=start=segment=0; issue(2); assert(!strcmp(emitted,"G90G94G53G0Z10.000000"));
+    issue(3); assert(!strcmp(emitted,"G90G94G53G0Z10.005000"));
+    issue(5); assert(!strcmp(emitted,"$P4PHASE=6"));
+    issue(7); assert(!strcmp(emitted,"G91G33Z9.995000K1.000000"));
+    start=1; issue(5); assert(!strcmp(emitted,"$P4PHASE=606"));
     sys.abort=true; emitted[0]=0; emit(); assert(!emitted[0]);
     sys.abort=false; busy=false; emit(); assert(!emitted[0]);
-    puts("PASS: generated non-thread moves stay in cutting-axis bounds; Thread commands preserved");
+    puts("PASS: generated moves for all profiles stay in cutting-axis bounds; multi-start G33 phase");
 }
 '''.replace('EMIT', emit)
 with tempfile.TemporaryDirectory() as directory:
