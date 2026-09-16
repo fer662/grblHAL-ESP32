@@ -10,6 +10,10 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
 ## Current scope
 
+**0.3.7 places machining limits outside their corresponding jog arrows.**
+The rest of the 0.3.6 layout is retained. See the updated
+[Gearbox and Thread previews](UI_ROADMAP.md).
+
 **0.3.6 enlarges the touchscreen layout for the 10.1-inch tablet.** Jog targets
 are separated from each other and from limit controls; sliding off a jog requires
 lifting before starting another direction. Position rows, cycle controls, menus

@@ -9,7 +9,7 @@ DPad::DPad(lv_obj_t *parent, ButtonDownCallback downCb, ButtonUpCallback upCb,
       endstopButtonUpCallback(endstopUpCb), userData(userData) {
   lastEndstopTexts.fill("");
   container = lv_obj_create(parent);
-  lv_obj_set_size(container, 600, 580);
+  lv_obj_set_size(container, 600, 628);
   lv_obj_set_style_bg_color(container, APP_COLOR_BG_SECONDARY, 0);
   lv_obj_set_style_border_width(container, 0, 0);
   lv_obj_set_style_pad_all(container, 0, 0);
@@ -19,12 +19,12 @@ DPad::DPad(lv_obj_t *parent, ButtonDownCallback downCb, ButtonUpCallback upCb,
   auto title = lv_label_create(container);
   lv_label_set_text(title, "JOG");
   lv_obj_set_style_text_font(title, LV_FONT_BIG, 0);
-  lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 16);
+  lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 12);
 
   // Keep H5's physical direction mapping: left is Z+, right is Z-.
   const char *labels[] = {LV_SYMBOL_UP "  X+", "Z-  " LV_SYMBOL_RIGHT,
                          LV_SYMBOL_DOWN "  X-", LV_SYMBOL_LEFT "  Z+"};
-  const lv_point_t positions[] = {{220, 62}, {412, 190}, {220, 318}, {28, 190}};
+  const lv_point_t positions[] = {{220, 132}, {316, 260}, {220, 388}, {124, 260}};
   for (unsigned i = 0; i < 4; ++i) {
     buttons[i] = lv_btn_create(container);
     lv_obj_set_size(buttons[i], 160, 112);
@@ -46,13 +46,13 @@ DPad::DPad(lv_obj_t *parent, ButtonDownCallback downCb, ButtonUpCallback upCb,
     lv_obj_add_event_cb(buttons[i], press_event_cb, LV_EVENT_PRESS_LOST, this);
   }
 
-  // Setting a machining limit is a separate target from jogging.
-  const Direction order[] = {BTN_UP, BTN_DOWN, BTN_LEFT, BTN_RIGHT};
-  for (unsigned column = 0; column < 4; ++column) {
-    unsigned i = order[column];
+  // Each limit sits beyond its jog arrow, with a 16-pixel gap between targets.
+  const lv_point_t limitPositions[] = {{220, 52}, {492, 272}, {220, 516}, {8, 272}};
+  for (unsigned i = 0; i < 4; ++i) {
     endstopButtons[i] = lv_btn_create(container);
-    lv_obj_set_size(endstopButtons[i], 132, 72);
-    lv_obj_set_pos(endstopButtons[i], 12 + column * 148, 458);
+    bool vertical = i == BTN_UP || i == BTN_DOWN;
+    lv_obj_set_size(endstopButtons[i], vertical ? 160 : 100, vertical ? 64 : 88);
+    lv_obj_set_pos(endstopButtons[i], limitPositions[i].x, limitPositions[i].y);
     lv_obj_set_style_radius(endstopButtons[i], 8, 0);
     lv_obj_set_style_bg_color(endstopButtons[i], APP_COLOR_BG_TERTIARY, 0);
     lv_obj_set_style_bg_color(endstopButtons[i], APP_COLOR_SECONDARY, LV_STATE_PRESSED);

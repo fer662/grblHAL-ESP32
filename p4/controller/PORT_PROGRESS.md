@@ -288,6 +288,23 @@ OTA installation and operator acceptance remain pending; the tablet was not
 reachable during this UI work. See [UI_ROADMAP.md](UI_ROADMAP.md) for previews
 and proposed controls using existing grblHAL features.
 
+## 0.3.7 outer-compass jog and limit layout
+
+Applied the operator's selected outer-compass arrangement only to the jog/limit
+panel. X+ and X- limits sit above/below their arrows; Z+ and Z- limits sit to
+their left/right. Jog targets stay 160 x 112 pixels, with a 16-pixel separation
+from each associated limit. The panel grows downward to 600 x 628 pixels.
+Other controls, mode-specific settings and input semantics are unchanged.
+
+The existing production-LVGL desktop pointer/layout regression passed, including
+all eight modes, jog release/slide cancellation, disabled axes, limit separation
+and SHIFT numeric entry. Gearbox and Thread preview pixels outside the jog/limit
+panel match 0.3.6 exactly. The IDF 5.5.2 normal firmware build passed with 23%
+OTA partition space free. Application SHA-256:
+`9ee9209cc20a47311215869677afed3af951f0ba265850966d3a1b9e7b101c1e`.
+OTA installation and real-tablet acceptance remain pending. No remote motion
+command was issued. Current previews are linked from [UI_ROADMAP.md](UI_ROADMAP.md).
+
 ## Hardware acceptance still required
 
 - [ ] Inspect external STEP/DIR pulse widths, jitter, skew and setup/hold at the connector.

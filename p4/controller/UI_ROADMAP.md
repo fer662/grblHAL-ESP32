@@ -1,5 +1,19 @@
 # Touchscreen improvements
 
+## Implemented in 0.3.7
+
+The operator selected the outer-compass jog/limit layout while retaining the
+rest of the 0.3.6 UI. Each limit now sits beyond its corresponding jog arrow,
+with a 16-pixel gap. The four jog buttons remain 160 x 112 pixels. The panel
+extends downward to 600 x 628; other controls retain their positions and behavior.
+Direction mapping, SHIFT entry, limit setting/clearing and slide-out cancellation
+are unchanged.
+
+Current desktop renders, with simulated readings:
+
+- [Gearbox](docs/ui-037-gearbox.png)
+- [Thread, with all mode-specific controls](docs/ui-037-thread.png)
+
 ## Implemented in 0.3.6
 
 The original 218 x 218 pixel jog pad used adjacent triangular targets. The new
@@ -26,7 +40,7 @@ Desktop renders, with simulated readings:
 
 ## Suggested additions using the existing core
 
-These are proposals, not enabled controls in 0.3.6. They require no new motion
+These are proposals, not enabled controls in 0.3.7. They require no new motion
 planner. Source references describe this checkout, not all upstream configurations.
 
 | Priority | UI addition | Existing support and integration required |
