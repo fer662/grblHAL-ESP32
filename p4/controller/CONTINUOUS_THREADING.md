@@ -1,6 +1,10 @@
 # Continuous clear-entry threading — introduced in 0.3.19
 
-## Current profile — 0.3.22
+**Superseded by 0.3.23:** the operator chose the former plunge / Z pass / retract
+sequence. See [current Thread behavior](THREADING.md). The implementation below
+is retained as historical documentation and is no longer compiled into the port.
+
+## Historical profile — 0.3.22
 
 Thread now approaches X to one native step outside the configured starting-X
 surface while Z is stationary. Phase wait and Z run-up happen at that near-surface

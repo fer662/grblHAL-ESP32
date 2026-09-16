@@ -5,7 +5,6 @@
 #include "grbl/task.h"
 #include "grbl/ioports.h"
 #include "cycle_plan.h"
-#include "thread_path.h"
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
@@ -19,12 +18,13 @@ parser_state_t gc_state;
 void st_spindle_sync_cfg(settings_t *, settings_changed_flags_t);
 static spindle_t spindle;
 static spindle_data_t spindle_data;
-static double seconds, rpm, phase_error, first_x_z, last_x_z;
+static double seconds, rpm, phase_error;
 static bool timer_running;
 static uint32_t period;
 static unsigned blocks, pulses_x, pulses_z;
 static h5_cycle_plan_t profile;
-static double initial_lag, turns, base_rpm, slew, last_z_time, max_z_gap, x_times[32];
+static double phase_margin;
+static double initial_lag, turns, base_rpm, slew;
 static foreground_task_ptr delayed;
 static void *delayed_data;
 static double due, cancel_after;
@@ -54,40 +54,23 @@ static void cycles(uint32_t c) {period=c;}
 static void pulse(stepper_t *s) {
  if(s->new_block) blocks++;
  double z=sys.position[Z_AXIS]/settings.axis[Z_AXIS].steps_per_mm;
- if(s->step_out.x) {
-  if(!pulses_x)first_x_z=z;last_x_z=z;
-  if(pulses_x>=32) assert((32.0/1200)/(seconds-x_times[pulses_x%32])<=1.01*settings.axis[X_AXIS].max_rate/60);
-  x_times[pulses_x++%32]=seconds;
- }
- if(s->step_out.z) {
-  if((z-profile.entry_begin)*profile.direction>0 && (profile.exit_end-z)*profile.direction>0)
-   max_z_gap=fmax(max_z_gap,seconds-last_z_time);
-  last_z_time=seconds;pulses_z++;
- }
- // Assess spindle phase throughout entry, full-depth cut and withdrawal.
- if((z-profile.entry_begin)*profile.direction>=.02 && (profile.exit_end-z)*profile.direction>=.02) {
+ assert(!s->step_out.x); // X must remain at depth throughout the Z pass.
+ if(s->step_out.z) pulses_z++;
+ // Assess steady-speed phase; acceleration/braking remain at depth.
+ if((z-profile.approach)*profile.direction>=phase_margin && (profile.finish-z)*profile.direction>=phase_margin) {
   double error=fabs(z-profile.approach)+initial_lag-spindle_data.angular_position*profile.lead;
   if(fabs(error)>phase_error)phase_error=fabs(error);
  }
 }
 
-static bool axes_available=true,update_active;
-bool h5_motion_idle(void) {return !timer_running;}
-bool h5_motion_axes_available(void) {return axes_available;}
-bool h5_update_active(void) {return update_active;}
-void limits_soft_check(float *target,planner_cond_t condition) {
- (void)condition;
- assert(target[Z_AXIS]>=profile.config.z_min-.00001 && target[Z_AXIS]<=profile.config.z_max+.00001);
- assert(!timer_running && pulses_x==0 && pulses_z==0); // Every target checked before movement.
-}
 void system_convert_array_steps_to_mpos(float *target,int32_t *steps) {
  for(unsigned i=0;i<N_AXIS;i++)target[i]=steps[i]/settings.axis[i].steps_per_mm;
 }
 void mc_override_ctrl_update(gc_override_flags_t flags) {sys.override.control=flags;}
 bool protocol_buffer_synchronize(void) {
  // Hardware index wait is simulated; it can only begin after all blocks exist.
- assert(plan_get_block_buffer_available()==100-H5_THREAD_BLOCKS);
- assert(sys.position[X_AXIS]==lround(profile.thread_clearance*1200) && !pulses_x);
+ assert(plan_get_block_buffer_available()==99);
+ assert(!pulses_x);
  if(cancel_after<0) {sys.abort=true;return false;}
  st_prep_buffer();initial_lag=st_get_spindle_sync_offset();st_wake_up();
  unsigned interrupts=0;
@@ -112,32 +95,40 @@ static void run(double speed,int direction,unsigned pass) {
  h5_cycle_machine_t m={0,0,speed,100,960,200,settings.axis[X_AXIS].acceleration/3600,settings.axis[X_AXIS].max_rate,1200};char error[96];
  assert(h5_cycle_plan(&c,&m,&profile,error,sizeof error));
  cancel_sent=false;
- base_rpm=rpm=speed;turns=seconds=phase_error=last_z_time=max_z_gap=0;pulses_x=pulses_z=blocks=0;timer_running=false;period=1000;
+ base_rpm=rpm=speed;turns=seconds=phase_error=0;pulses_x=pulses_z=blocks=0;timer_running=false;period=1000;
  memset(&sys,0,sizeof sys);sys.override.feed_rate=sys.override.rapid_rate=100;
  st_reset();
- double x,z;h5_thread_point(&profile,pass,0,&x,&z);
+ double x=h5_cycle_depth(&profile,pass),z=profile.approach;
+ double v=profile.lead*c.rpm_limit/60;phase_margin=v*v/(2*m.z_acceleration)+.05;
  sys.position[X_AXIS]=lround(x*1200);sys.position[Z_AXIS]=lround(z*200);
  assert(plan_reset());plan_sync_position();
- axes_available=false;assert(h5_thread_execute(&profile,pass)==Status_IdleError);
- axes_available=true;update_active=true;assert(h5_thread_execute(&profile,pass)==Status_IdleError);
- update_active=false;assert(!plan_get_current_block() && !pulses_x && !pulses_z);
+ // Submit the native single synchronized Z block used by the G33 emitter.
+ // This bypasses parser/index hardware; production emitter tests cover G-code.
+ plan_line_data_t data;plan_data_init(&data);
+ data.spindle=spindle;data.spindle.state.synchronized=On;
+ data.feed_rate=profile.lead;
+ data.overrides=sys.override.control;data.overrides.sync=On;
+ data.overrides.feed_rates_disable=data.overrides.spindle_rpm_disable=On;
+ data.overrides.feed_hold_disable=data.condition.no_feed_override=On;
+ float target[N_AXIS]={0};target[X_AXIS]=x;target[Z_AXIS]=profile.finish;
+ assert(plan_buffer_line(target,&data));
+ bool done=protocol_buffer_synchronize();
  if(cancel_after!=0) {
-  assert(h5_thread_execute(&profile,pass)==Status_IdleError && !timer_running);
+  assert(!done && !timer_running);
   assert(sys.position[Z_AXIS]>=0 && sys.position[Z_AXIS]<=lround(profile.config.z_max*200));
   assert(sys.position[X_AXIS]>=-600 && sys.position[X_AXIS]<=1200);
   if(cancel_after<0)assert(!pulses_x && !pulses_z);
-  puts("PASS: cancellation during index wait / continuous motion remains bounded");return;
+  puts("PASS: cancellation during index wait / Z pass remains bounded");return;
  }
- assert(h5_thread_execute(&profile,pass)==Status_OK);
- assert(blocks==H5_THREAD_BLOCKS);
+ assert(done);
+ assert(blocks==1 && pulses_x==0);
  assert(pulses_z==lround(fabs(profile.finish-profile.approach)*200));
- assert(sys.position[X_AXIS]==lround(profile.thread_clearance*1200));
+ assert(sys.position[X_AXIS]==lround(x*1200));
  assert(sys.position[Z_AXIS]==lround(profile.finish*200));
- assert((first_x_z-profile.entry_begin)*direction>=-.0051);
- assert((profile.exit_end-last_x_z)*direction>=-.0051);
+
  printf("rpm %.0f dir %d pass %u: %u blocks, X/Z %u/%u, peak phase %.6f mm\n",rpm,direction,pass,blocks,pulses_x,pulses_z,phase_error);
  assert(phase_error<.02);
- assert(max_z_gap<3*60/(.8*base_rpm*profile.lead*200));
+
 }
 int main(void) {
  settings.planner_buffer_blocks=100;settings.junction_deviation=.01;settings.steppers.idle_lock_time=255;
@@ -159,5 +150,5 @@ int main(void) {
  slew=0;settings.axis[0].max_rate=60;run(100,1,4);settings.axis[0].max_rate=300;
  aux_forward=false;run(100,1,4);thread_starts=3;run(100,-1,4);
  thread_starts=1;aux_forward=true;cancel_after=-1;run(100,1,4);cancel_after=4;run(100,-1,4);
- puts("PASS: actual grblHAL planner/segments/ISR: clear run-up, moving entry/exit, endpoints and continuous phase");
+ puts("PASS: actual grblHAL planner/segments/ISR: single Z pass, fixed X depth, endpoints, cancellation and steady phase");
 }

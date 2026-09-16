@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "cycle.h"
-#include "thread_path.h"
 #include "follow.h"
 #include "freertos/FreeRTOS.h"
 #include "critical.h"
@@ -160,7 +159,7 @@ static void emit(void)
         snprintf(line, sizeof(line), "G90G94G53G0%c%.6f", plan.cut_axis, approach);
         break;
     case 4:
-        snprintf(line, sizeof(line), "G90G94G53G0%c%.6f", plan.depth_axis, plan.indexed ? plan.thread_clearance : infeed);
+        snprintf(line, sizeof(line), "G90G94G53G0%c%.6f", plan.depth_axis, infeed);
         break;
     case 5:
         snprintf(line, sizeof(line), "$P4PHASE=%u", h5_cycle_phase(&plan, start));
@@ -175,7 +174,7 @@ static void emit(void)
             h5_cycle_point(&plan, pass, segment, &px, &pz, &unused);
             snprintf(line, sizeof(line), "G91G95G1X%.6fZ%.6fF%.6f", x - px, z - pz, feed);
         } else if (plan.indexed)
-            snprintf(line, sizeof(line), "$P4THREADPASS");
+            snprintf(line, sizeof(line), "G91G33%c%.6fK%.6f", plan.cut_axis, endpoint - approach, plan.lead);
         else
             snprintf(line, sizeof(line), "G91G95G1%c%.6fF%.6f", plan.cut_axis, endpoint - approach,
                      plan.lead);
@@ -200,7 +199,7 @@ static void emit(void)
         return;
     }
     waiting_ack = true;
-    message(plan.indexed && stage==4 ? "Approach stock surface" : names[stage], true);
+    message(names[stage], true);
 }
 static void poll_cycle(void)
 {
@@ -247,9 +246,9 @@ static void poll_cycle(void)
         char info[480];
         snprintf(info, sizeof(info),
                  "[H5PLAN:LEAD:%.6f|APPROACH:%.6f|FINISH:%.6f|CLEARANCE:%.6f|RPM_"
-                 "LIMIT:%.3f|CUT_LENGTH:%.6f|ACCEL:%.3f|FULL_BEGIN:%.6f|FULL_END:%.6f]\r\n",
+                 "LIMIT:%.3f|CUT_LENGTH:%.6f|ACCEL:%.3f]\r\n",
                  plan.lead, plan.approach, plan.finish, plan.clearance,
-                 config.rpm_limit, fabs(plan.finish-plan.approach), plan.cut_acceleration, plan.full_begin, plan.full_end);
+                 config.rpm_limit, fabs(plan.finish-plan.approach), plan.cut_acceleration);
         hal.stream.write(info);
     }
     if (sys.alarm) {
@@ -357,11 +356,6 @@ void h5_cycle_poll(void)
 }
 status_code_t h5_cycle_command(sys_state_t state, char *line)
 {
-    if (!strcmp(line, "P4THREADPASS")) {
-        if (!owns_stream || !published.active || !waiting_ack || stage != 7 || !plan.indexed || stopping)
-            return Status_IdleError;
-        return h5_thread_execute(&plan,pass);
-    }
     if (!strcmp(line, "P4ADVANCE"))
         return h5_cycle_advance() ? Status_OK : Status_IdleError;
     if (!strcmp(line, "P4RELEASE")) {

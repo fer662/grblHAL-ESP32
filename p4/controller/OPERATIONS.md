@@ -11,7 +11,7 @@ a separate disconnected, enable-locked build.
 | Cone | Gearbox motion with X/Z slope `-ratio/2 × auxiliary-direction sign`, clipped to both axes' bounds. X is radial. |
 | Async | Z advances at signed configured mm/s using normal acceleration, with manual override and resume. |
 | Turn | Repeated G95 feed-per-revolution Z cuts with linear X depth progression and clearance returns. Acceleration and deceleration stay within the entered Z endpoints. |
-| Thread | Indexed G33 Z cuts with lead = pitch × starts and phase registration. One indexed pass with clear Z run-up, moving X infeed/withdrawal, and clear Z braking. Preview reports programmed full-depth start/end and length. |
+| Thread | Indexed G33 Z cuts with lead = pitch × starts and phase registration. X reaches depth before the Z-only pass and retracts after Z stops. Preview reports Z endpoints and travel at cutting depth. |
 | Face | Repeated X cuts with Z depth progression and clearance; native G95 feed accelerates and decelerates at the specified X endpoints. |
 | Cut | Progressively deeper X plunges, returning to the X start each pass; Z remains fixed. |
 | Ellipse | Scaled quarter-ellipse X/Z paths per depth, retaining the original spindle-progress parameterization and auxiliary direction. Chords feed native lookahead. |
@@ -53,12 +53,11 @@ The last depth is retained. It never jumps out of a cut halfway through.
   Saved endpoints and generated moves retain machine coordinates when zero changes.
   Re-establish work zero after power-up until a repeatable machine reference exists.
   G18 is the supported arc plane; Y and G76 are rejected.
-- Thread waits for phase and accelerates Z with X clear. X feeds in and withdraws
-  while Z continues moving. It reaches clearance before Z brakes at the end bound.
-  Preview reports the programmed full-depth section; entry/exit consume real space
-  constrained by X speed/acceleration. Insufficient Z spans are rejected. See
-  [continuous threading](CONTINUOUS_THREADING.md). Depth-axis clearance remains
-  separate from cutting-axis travel bounds.
+- Thread infeeds X at stationary Z, waits for phase, then makes a native G33
+  Z-only pass at depth. X retracts after Z stops. Preview reports commanded
+  infeed/retract Z positions and travel at depth; a 10 mm span has 9.995 mm travel
+  after the one-step approach. Native acceleration and speed feasibility remain.
+  See [threading](THREADING.md). Clearance is separate from cutting-axis bounds.
 - 0.3.18 upgrades saved default Z acceleration from 50 to 100 mm/s² once, through
   native grbl settings; custom tuning and X settings are retained. Bench builds
   keep Z=50. The higher normal-build acceleration needs loaded-machine validation.

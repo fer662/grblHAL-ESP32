@@ -11,6 +11,13 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
 ## Current scope
 
+**0.3.23 restores the old Thread operation order:** X reaches depth before the
+native G33 Z pass and retracts after Z stops. The 10 mm example now reports
+9.995 mm at cutting depth (one Z step inside the start). Removed the moving-entry
+batch executor and geometry; native acceleration, bounds, phase, Rapids and X
+trial settings remain. See [current threading](THREADING.md). Earlier moving-entry
+release notes below are historical and superseded.
+
 **0.3.22 moves the Thread air-clearance stroke with Z stationary.** X approaches
 one step outside the configured starting-X surface before phase wait and Z
 run-up. It withdraws to there during the pass and completes the full clearance
@@ -360,7 +367,7 @@ It has six isolated commits over upstream `516e5ad80757bd2eba86bff18feb613ca121d
 | `28dabc2` | Opt-in rate and acceleration limits for the actual X/Z path. |
 | `f799fd0` | Configurable AMASS cutoff; the upstream default remains 8000 Hz. |
 | `09df51b` | Avoid waiting for a second completion when cancellation and completion coincide. |
-| `e59703f` | Opt-in continuous synchronized blocks retain one spindle origin and acceleration phase reference. |
+| `e59703f` | Opt-in continuous synchronized blocks retain one spindle origin and acceleration phase reference; disabled in the P4 port since 0.3.23. |
 
 The original `codex/spindle-segment-time` branch retains only the first fix.
 Preserve this separation when merging/rebasing upstream; drop a local patch only

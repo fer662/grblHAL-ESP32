@@ -3,18 +3,17 @@
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
-#include <string.h>
 #define CLOSE(a,b) assert(fabs((a)-(b)) < .000001)
 int main(void)
 {
     h5_cycle_config_t c={.threading=true,.aux_forward=true,.passes=4,.starts=2,.pitch=.5,
-        .x_min=-1,.x_max=1,.z_min=10,.z_max=110,.rpm_limit=360};
-    h5_cycle_machine_t m={.x=0,.z=0,.rpm=300,.z_acceleration=50,.z_max_rate=960,.z_steps_mm=200,.x_acceleration=25,.x_max_rate=60,.x_steps_mm=1200};
+        .x_min=-1,.x_max=1,.z_min=10,.z_max=20,.rpm_limit=360};
+    h5_cycle_machine_t m={.x=0,.z=0,.rpm=300,.z_acceleration=50,.z_max_rate=960,.z_steps_mm=200};
     h5_cycle_plan_t p; char error[96];
     assert(h5_cycle_plan(&c,&m,&p,error,sizeof(error)));
     assert(p.indexed);
     CLOSE(p.lead,1); CLOSE(p.cut_acceleration,50);
-    CLOSE(p.approach,10.005); CLOSE(p.finish,110); CLOSE(p.takeup,10);
+    CLOSE(p.approach,10.005); CLOSE(p.finish,20); CLOSE(p.takeup,10);
     CLOSE(p.clearance,-1.5); CLOSE(h5_cycle_depth(&p,0),-.5); CLOSE(h5_cycle_depth(&p,3),1);
     assert(h5_cycle_phase(&p,0)==6); assert(h5_cycle_phase(&p,1)==606);
     for (int spindle=-1;spindle<=1;spindle+=2) for(int pitch=-1;pitch<=1;pitch+=2) {
@@ -102,78 +101,36 @@ int main(void)
         .x_min=0,.x_max=1,.z_min=0,.z_max=.005,.rpm_limit=500};
     m.rpm=-400; assert(h5_cycle_plan(&c,&m,&p,error,sizeof(error)));
     CLOSE(p.approach,.005); CLOSE(p.takeup,.005); CLOSE(p.finish,0);
-    // Moving entry/exit: each pass gets its own stations, bounded in both directions.
+    // Thread targets are actual infeed/retract stations, independent of ramp length.
+    c.operation=H5_THREAD; c.z_max=10;
+    assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
+    CLOSE(p.takeup,10); CLOSE(p.approach,9.995); CLOSE(p.finish,0);
+    double ramp=ceil(pow(.1*500/60,2)/(2*50)*200)/200;
+    double reserved=2*ramp+.005;
+    for(int sign=-1;sign<=1;sign+=2) {
+        c.pitch=.1*sign;
+        c.z_max=reserved; assert(!h5_cycle_plan(&c,&m,&p,error,sizeof error));
+        c.z_max=reserved+.0025; assert(!h5_cycle_plan(&c,&m,&p,error,sizeof error));
+        c.z_max=reserved+.005; assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
+        CLOSE(fabs(p.finish-p.approach)-2*ramp,.005);
+    }
+    // More starts need more ramp distance; never silently trim pitch.
+    c.z_max=.5; c.pitch=.1; c.starts=1;
+    assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
+    c.starts=7; assert(!h5_cycle_plan(&c,&m,&p,error,sizeof error));
+    // Photograph regression: the 10 mm span cuts from .005 to 10, not 2.075 to 8.590.
     c=(h5_cycle_config_t){.operation=H5_THREAD,.passes=5,.starts=1,.pitch=.5,.aux_forward=true,
-        .x_min=0,.x_max=1,.z_min=0,.z_max=10,.rpm_limit=125};
-    m.rpm=100;m.z_acceleration=100;
-    for(int dir=-1;dir<=1;dir+=2) {
-        c.pitch=.5*dir;
-        assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
-        assert((p.full_end-p.full_begin)*dir>0);
-        for(unsigned pass=0;pass<c.passes;pass++) {
-            double last_z=p.approach,begin,end;
-            h5_thread_stations(&p,pass,&begin,&end);
-            assert((begin-p.full_begin)*dir<=1e-9 && (end-p.full_end)*dir>=-1e-9);
-            if(pass==c.passes-1){CLOSE(begin,p.full_begin);CLOSE(end,p.full_end);}
-
-            for(unsigned point=0;point<=H5_THREAD_BLOCKS;point++) {
-                double x,z;h5_thread_point(&p,pass,point,&x,&z);
-                assert(z>=0 && z<=10 && x>=-.5 && x<=1);
-                assert((z-last_z)*dir>=-1e-9);last_z=z;
-                if(point<=1 || point>=H5_THREAD_BLOCKS-1) CLOSE(x,p.thread_clearance);
-                if(point==H5_THREAD_RAMP_SEGMENTS+1) {CLOSE(z,begin);CLOSE(x,h5_cycle_depth(&p,pass));}
-                if(point==H5_THREAD_RAMP_SEGMENTS+2) {CLOSE(z,end);CLOSE(x,h5_cycle_depth(&p,pass));}
-            }
-        }
-        unsigned phase=h5_cycle_phase(&p,0);
-        m.z_acceleration=50;assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
-        assert(h5_cycle_phase(&p,0)==phase);m.z_acceleration=100;
-    }
-    // At the legacy 1 mm/s X rate this setup cannot fit moving entry in 10 mm.
-    c.pitch=.5;c.rpm_limit=564;m.rpm=451;
-    assert(!h5_cycle_plan(&c,&m,&p,error,sizeof error));
-    assert(strstr(error,"moving X entry/retract"));
-    c.z_max=40;assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
-    c.z_max=10;m.x_max_rate=300;
+        .x_min=0,.x_max=1,.z_min=0,.z_max=10,.rpm_limit=564};
+    m.rpm=451;m.z_acceleration=50;
     assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
-    CLOSE(p.full_begin,2.020);CLOSE(p.full_end,7.985);CLOSE(p.exit_end,9.880);
-    m.x_max_rate=300;m.x_acceleration=500;
-    assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
-    CLOSE(p.full_begin,1.145);CLOSE(p.full_end,8.860);CLOSE(p.exit_end,9.880);
-    double first_begin,first_end;
-    h5_thread_stations(&p,0,&first_begin,&first_end);
-    CLOSE(first_begin,.390);CLOSE(first_end,9.615);
-    // Quantized chords must stay within configured X speed at the RPM ceiling.
-    for(unsigned pass=0;pass<c.passes;pass++) {
-        double px,pz;h5_thread_point(&p,pass,0,&px,&pz);
-        for(unsigned point=1;point<=H5_THREAD_BLOCKS;point++) {
-            double x,z;h5_thread_point(&p,pass,point,&x,&z);
-            assert(z>pz);
-            assert(fabs(x-px)/(z-pz)*p.lead*c.rpm_limit/60 <= m.x_max_rate/60+1e-8);
-            px=x;pz=z;
-        }
-    }
-    m.x_max_rate=0;assert(!h5_cycle_plan(&c,&m,&p,error,sizeof error));
-    // Both triangular and trapezoidal transitions, low RPM step rounding,
-    // internal/external cutting and all pass depths preserve bounds and rate.
-    const double rates[]={60,300}, accelerations[]={25,500}, depths[]={.001,.1,1}, rpms[]={30,125,564};
-    for(unsigned a=0;a<2;a++)for(unsigned r=0;r<2;r++)for(unsigned d=0;d<3;d++)for(unsigned n=0;n<3;n++)
-    for(int sign=-1;sign<=1;sign+=2)for(unsigned aux=0;aux<2;aux++) {
-        c.x_min=0;c.x_max=depths[d];c.z_min=0;c.z_max=100;c.pitch=.5*sign;
-        c.rpm_limit=rpms[n];c.aux_forward=aux;m.rpm=rpms[n];
-        m.x_max_rate=rates[r];m.x_acceleration=accelerations[a];
-        assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
-        double outward=(c.aux_forward?-1:1)*(p.thread_clearance-p.depth_start);
-        assert(outward>=1/m.x_steps_mm-1e-9 && outward<=2/m.x_steps_mm+1e-9);
-        for(unsigned pass=0;pass<c.passes;pass++) {
-            double px,pz;h5_thread_point(&p,pass,0,&px,&pz);
-            for(unsigned point=1;point<=H5_THREAD_BLOCKS;point++) {
-                double x,z;h5_thread_point(&p,pass,point,&x,&z);
-                assert((z-pz)*p.direction>0 && z>=0 && z<=100);
-                assert(fabs(x-px)/fabs(z-pz)*p.lead*c.rpm_limit/60 <= m.x_max_rate/60+1e-8);
-                px=x;pz=z;
-            }
-        }
-    }
-    puts("PASS: moving-entry geometry, physical rate feasibility, fixed phase, all profile bounds and clearance");
+    CLOSE(p.approach,.005);CLOSE(p.finish,10);CLOSE(fabs(p.finish-p.approach),9.995);
+    CLOSE(h5_cycle_depth(&p,0),.2);CLOSE(h5_cycle_depth(&p,4),1);
+    unsigned phase=h5_cycle_phase(&p,0);
+    m.z_acceleration=100;assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
+    CLOSE(p.cut_acceleration,100);CLOSE(p.approach,.005);CLOSE(p.finish,10);
+    assert(h5_cycle_phase(&p,0)==phase);
+    // A short pass can now reach the same feed at 100 but cannot at 50 mm/s^2.
+    c.z_max=.3;assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
+    m.z_acceleration=50;assert(!h5_cycle_plan(&c,&m,&p,error,sizeof error));
+    puts("PASS: actual cut targets, acceleration feasibility, phase, all profile bounds and clearance");
 }

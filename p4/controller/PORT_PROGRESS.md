@@ -6,6 +6,20 @@ Earlier acceptance used a disconnected Waveshare P4 with enables locked. The
 0.3.3 main build enables normal axis controls for the operator-requested first
 unloaded Z test; installation status and remaining checks are recorded below.
 
+## 0.3.23 restored Thread order (built; not installed)
+
+Restored old H5's plunge / Z-only pass / retract ordering via native G33. Removed
+the custom synchronized batch command/executor and moving-X geometry. Continuous
+block synchronization is no longer enabled in this port. Preview reports 9.995 mm
+Z travel at cutting depth for a 10 mm span; native acceleration/phase/bounds remain.
+Rapids, X max 5 mm/s and X trial acceleration 500 mm/s² are retained.
+
+Validation: production geometry/emitter/preview, native planner/segment/ISR
+simulation of a single synchronized Z block (no X pulses), all depth passes,
+RPM changes, direction, multiple starts and cancellation; jog/disable/cancel
+regressions passed. The ESP32-P4 build and metric/inch LVGL preview renders passed.
+No OTA or on-machine motion sent. [Current Thread behavior](THREADING.md).
+
 ## 0.3.22 stationary-Z air approach/retract (built; not installed)
 
 Thread now approaches X to one native step outside the configured starting-X

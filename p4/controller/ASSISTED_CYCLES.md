@@ -5,6 +5,13 @@ Turn/Thread geometry and records its earlier validation. See [OPERATIONS.md](OPE
 for Face, Cut, Ellipse, Gearbox, Cone, Async, parameter edits and the current
 operating limits. See [PORT_PROGRESS.md](PORT_PROGRESS.md) for final regression status.
 
+## Change in 0.3.23: restore plunge / Z pass / retract
+
+X reaches pass depth before phase wait and the native G33 Z pass, then retracts
+after Z stops. Removed custom moving-entry geometry and `$P4THREADPASS`; the
+preview reports actual Z travel at cutting depth, 9.995 mm for the 10 mm example.
+Rapids and the X trial settings are retained. [Current behavior and tests](THREADING.md).
+
 ## Change in 0.3.22: air clearance with stationary Z
 
 Before phase wait, X pre-positions one step outside the configured starting-X
@@ -186,10 +193,9 @@ For Thread, the generated sequence is:
 1. Set metric/radial coordinates and the XZ plane.
 2. Retract X to its clearance position before moving Z to the approach.
 3. Move to the Z start bound, then take up one step inward in the cutting direction.
-4. Keep X at clearance, register spindle phase and select spindle direction.
-5. Queue the complete continuous path before the single index wait.
-6. Accelerate Z clear, infeed X while moving, cut the full-depth section,
-   withdraw X while moving, then brake Z clear at the opposite bound.
+4. Move X to pass depth with Z stationary, then register phase and spindle direction.
+5. Wait for synchronization and execute one native G33 Z-only pass.
+6. Stop Z at the opposite bound, then retract X to clearance.
 7. Return Z at clearance and take up one step inward.
 8. Repeat all starts at the same depth before increasing depth.
 9. After the final pass, return Z to the cutting start and X to its initial bound.
