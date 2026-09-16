@@ -406,6 +406,9 @@ static status_code_t command(sys_state_t state, char *line)
     if(storage_result!=Status_Unhandled)return storage_result;
     status_code_t tmc_result=h5_tmc_command(state,line);
     if(tmc_result!=Status_Unhandled)return tmc_result;
+    // The internal Thread batch queues native blocks instead of parser moves.
+    if (!strcmp(line, "P4THREADENTRY") && (disabled_applied & (X_AXIS_BIT | Z_AXIS_BIT)))
+        return Status_SettingDisabled;
     status_code_t cycle_result = h5_cycle_command(state, line);
     if (cycle_result != Status_Unhandled) return cycle_result;
     status_code_t spindle_result = h5_spindle_command(state, line);

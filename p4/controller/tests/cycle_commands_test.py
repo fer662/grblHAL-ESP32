@@ -22,12 +22,13 @@ enum {X_AXIS=0,Z_AXIS=2};
 static struct {bool abort;int32_t position[3];} sys;
 static struct {struct {double steps_per_mm,max_rate;} axis[3];} settings={{{1200,300},{200,960},{200,960}}};
 static struct {char message[96];} published;
-static bool reverse_cut;
+static bool reverse_cut, thread_entry;
 static int cut_spindle_direction;
 static double rpm=400;
 static const char *names[15];
 static char emitted[128];
 static bool h5_cycle_busy(void) { return busy; }
+static void h5_spindle_entry_prepare(void) {}
 static float h5_spindle_profile_rpm(void) { return rpm; }
 static uint32_t h5_bridge_cycle_submit(const char *line) {
     snprintf(emitted,sizeof emitted,"%s",line); return 1;
@@ -40,7 +41,10 @@ static double position[2];
 static void move(unsigned next) {
     issue(next);
     char axis; double value,x,z,feed;
-    if(sscanf(emitted,"G90G94G53G0%c%lf",&axis,&value)==2) position[axis=='X'?0:1]=value;
+    if(!strcmp(emitted,"$P4THREADENTRY")) {
+        assert(plan.indexed && thread_entry);
+        position[0]=h5_cycle_depth(&plan,pass); position[1]=plan.finish;
+    } else if(sscanf(emitted,"G90G94G53G0%c%lf",&axis,&value)==2) position[axis=='X'?0:1]=value;
     else if(sscanf(emitted,"G90G95G53G1X%lfZ%lfF%lf",&x,&z,&feed)==3) {
         position[0]=x; position[1]=z; assert(feed>0);
     } else if(sscanf(emitted,"G91G33%c%lfK%lf",&axis,&value,&feed)==3) {
@@ -76,12 +80,11 @@ int main(void) {
             for(pass=0;pass<c.passes;pass++) {
                 if(pass && op==H5_ELLIPSE) { move(2); move(3); }
                 if(plan.indexed) assert(fabs(position[1]-plan.approach)<1e-6);
-                move(4);
                 if(plan.indexed) {
-                    assert(fabs(position[0]-h5_cycle_depth(&plan,pass))<1e-6);
-                    assert(fabs(position[1]-plan.approach)<1e-6);
-                }
-                issue(5);
+                    issue(4); // Advances directly to phase registration, with X clear.
+                    assert(stage==5 && thread_entry);
+                    assert(fabs(position[0]-plan.clearance)<1e-6);
+                } else { move(4); issue(5); }
                 if(!plan.indexed) assert(!strcmp(emitted,"$P4PHASE=0"));
                 issue(6);
                 for(segment=0;segment<(op==H5_ELLIPSE?plan.segments:1);segment++) move(7);
@@ -107,7 +110,8 @@ int main(void) {
     issue(3); assert(!strcmp(emitted,"G90G94G53G0Z10.005000"));
     sys.position[2]=lround(plan.approach*200);
     issue(5); assert(!strcmp(emitted,"$P4PHASE=6"));
-    issue(7); assert(!strcmp(emitted,"G91G33Z9.995000K1.000000"));
+    thread_entry=true; issue(7); assert(!strcmp(emitted,"$P4THREADENTRY"));
+    thread_entry=false; issue(7); assert(!strcmp(emitted,"G91G33Z9.995000K1.000000"));
     start=1; issue(5); assert(!strcmp(emitted,"$P4PHASE=606"));
     sys.abort=true; emitted[0]=0; emit(); assert(!emitted[0]);
     sys.abort=false; busy=false; emit(); assert(!emitted[0]);

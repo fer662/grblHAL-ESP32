@@ -25,7 +25,9 @@ static void discard(const char *s) {(void)s;}
 static struct {struct {void (*write)(const char *);} stream;} hal={{discard}};
 static unsigned state,rt,owner,submissions,phase_commands,plunges;
 static double rpm;
-static bool stepping,planner,index_wait,profile_mode,braking;
+static bool stepping,planner,index_wait,profile_mode,braking,entry_is_cutting;
+static void h5_spindle_entry_prepare(void) {entry_is_cutting=false;}
+static bool h5_spindle_entry_cutting(void) {return entry_is_cutting;}
 static h5_status_t status;
 static char queued[128];
 static unsigned target_stage;
@@ -58,13 +60,23 @@ static void h5_spindle_command(unsigned s,char *line) {(void)s;(void)line;}
 static void system_set_exec_state_flag(unsigned mask) {rt|=mask;}
 static void protocol_enqueue_realtime_command(unsigned c) {assert(c==CMD_RESET);rt|=4;}
 uint32_t h5_bridge_cycle_submit(const char *line) {
- assert(!queued[0]);snprintf(queued,sizeof queued,"%s",line);return ++submissions;
+ assert(!queued[0]);if(!strcmp(line,"$P4THREADENTRY"))entry_is_cutting=false;
+ snprintf(queued,sizeof queued,"%s",line);return ++submissions;
 }
 SOURCE
+static void begin_cut(void) {
+ if(thread_entry && !entry_is_cutting) {
+  entry_is_cutting=true;plunges++;
+  sys.position[0]=lround(h5_cycle_depth(&plan,pass)*1200);
+ }
+}
 static void complete(void) {
  char axis;double value,x,z,feed;
  assert(queued[0]);
  if(stage==4)plunges++;
+ if(!strcmp(queued,"$P4THREADENTRY")) {
+  begin_cut();sys.position[2]=lround(plan.finish*200);
+ }
  if(stage==5)phase_commands++;
  if(sscanf(queued,"G90G94G53G0%c%lf",&axis,&value)==2 ||
     sscanf(queued,"G90G95G53G1%c%lfF%lf",&axis,&value,&feed)==3) {
@@ -94,7 +106,7 @@ static void reset_core(void) {
  h5_cycle_reset();
 }
 static void interrupt_cut(double next_rpm,double x,double z,bool at_index) {
- assert(stage==7 && queued[0]);queued[0]=0;
+ assert(stage==7 && queued[0]);if(!at_index)begin_cut();queued[0]=0;
  status.completed_id=command_id;status.command_status=0;
  sys.position[0]=lround(x*1200);sys.position[2]=lround(z*200);
  state=STATE_CYCLE;stepping=!at_index;planner=true;index_wait=at_index;
@@ -117,13 +129,14 @@ int main(void) {
  (void)target_stage;
  for(unsigned op=H5_TURN;op<=H5_ELLIPSE;op++) {
   new_cycle(op);
-  // Starting with spindle off positions/plunges once, then waits indefinitely.
+  // Thread waits clear; other profiles retain their existing plunge-first behavior.
   for(unsigned n=0;n<100;n++) {h5_cycle_poll();if(queued[0])complete();}
-  assert(h5_cycle_busy() && stage==5 && !queued[0] && plunges==1);
+  assert(h5_cycle_busy() && stage==5 && !queued[0] && plunges==(op==H5_THREAD?0:1));
   unsigned before=submissions;
   for(unsigned n=0;n<10000;n++)h5_cycle_poll();
   assert(submissions==before && !rt);
   rpm=5;until_cut();assert(h5_cycle_busy() && profile_mode);
+  begin_cut();
   double x=axis_position('X'),z=axis_position('Z');
   if(op==H5_FACE || op==H5_CUT)x=.25;
   else if(op==H5_ELLIPSE) {double feed;h5_cycle_point(&plan,0,plan.segments/2,&x,&z,&feed);}
@@ -145,12 +158,29 @@ int main(void) {
   for(unsigned n=0;n<10000 && h5_cycle_busy();n++) {h5_cycle_poll();if(queued[0])complete();}
   assert(!h5_cycle_busy() && !owner && plunges==2);
  }
- // An index wait may outlast a stopped spindle without a reset or lost pass.
- new_cycle(H5_THREAD);rpm=5;until_cut();queued[0]=0;
+ // A resumed cut at depth retains the existing stopped-index wait behavior.
+ new_cycle(H5_THREAD);rpm=5;until_cut();begin_cut();thread_entry=false;queued[0]=0;
  status.completed_id=command_id;state=STATE_CYCLE;planner=index_wait=true;rpm=0;
  for(unsigned n=0;n<1000;n++)h5_cycle_poll();assert(!rt && h5_cycle_busy());
  // Explicit STOP still cancels an index wait and cannot auto-resume.
  h5_cycle_cancel();h5_cycle_poll();assert(rt&EXEC_STOP);reset_core();assert(!h5_cycle_busy());
+ // Stopping or reversing during entry reacquires with X clear, retaining pass.
+ for(unsigned during=0;during<2;during++) {
+  new_cycle(H5_THREAD);rpm=100;until_cut();
+  queued[0]=0;status.completed_id=command_id;state=STATE_CYCLE;planner=true;
+  index_wait=!during;stepping=during;
+  if(during)sys.position[0]=0; // partially plunged, Z remains at the approach
+  rpm=0;h5_cycle_poll();assert(pausing && restart_entry);
+  if(during) {state=STATE_IDLE;stepping=planner=false;h5_cycle_poll();}
+  reset_core();
+  for(unsigned n=0;n<100;n++){h5_cycle_poll();if(queued[0])complete();}
+  assert(stage==5 && pass==0 && start==0 && thread_entry && plunges==0);
+  assert(fabs(axis_position('X')-plan.clearance)<.001);
+  rpm=100;until_cut();assert(!strcmp(queued,"$P4THREADENTRY"));
+ }
+ // A stale completed-pass latch must not bypass the next queued entry.
+ new_cycle(H5_THREAD);entry_is_cutting=true;rpm=100;until_cut();
+ h5_cycle_poll();assert(thread_entry && !entry_is_cutting);
  // Actual axis-rate constraint keeps the operation armed instead of rejecting it.
  new_cycle(H5_THREAD);rpm=20000;
  for(unsigned n=0;n<100;n++) {h5_cycle_poll();if(queued[0])complete();}

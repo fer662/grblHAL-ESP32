@@ -24,9 +24,20 @@ static bool ready;
 static volatile bool tracking, waiting;
 static volatile bool follow_mode, follow_braking;
 static volatile bool profile_mode;
+static volatile bool entry_armed, entry_cutting;
+static double entry_seconds, entry_lead, entry_acceleration;
+static int64_t entry_advance;
+void h5_spindle_entry_arm(double seconds, double lead, double acceleration)
+{
+    entry_seconds = seconds; entry_lead = lead; entry_acceleration = acceleration;
+    entry_cutting = false; entry_armed = true;
+}
+bool h5_spindle_entry_cutting(void) { return entry_cutting; }
+void h5_spindle_entry_prepare(void) { entry_armed = entry_cutting = false; }
 static volatile float profile_last_rpm = 1;
 void h5_spindle_profile(bool enabled) {
     profile_mode = enabled;
+    if (!enabled) entry_armed = false;
     follow_braking = false;
     if (h5_spindle_rpm() != 0) profile_last_rpm = fabsf(h5_spindle_rpm());
 }
@@ -130,7 +141,15 @@ static void reset_data(void)
     index_phase = phase;
     phase_compensation = lead_distance = 0;
     plan_block_t *block = plan_get_current_block();
-    if (block && block->programmed_rate > 0 && block->acceleration > 0) {
+    if (entry_armed) {
+        double rpm = fabsf(h5_spindle_profile_rpm());
+        double velocity = entry_lead * rpm / 60.0;
+        phase_compensation = velocity * velocity / (2 * entry_acceleration);
+        int64_t cut_advance = llround(phase_compensation * H5_ENCODER_CPR / entry_lead);
+        entry_advance = llround(entry_seconds * rpm * H5_ENCODER_CPR / 60.0);
+        int64_t shift = (cut_advance + entry_advance) % H5_ENCODER_CPR;
+        index_phase = (phase + H5_ENCODER_CPR - shift) % H5_ENCODER_CPR;
+    } else if (block && block->programmed_rate > 0 && block->acceleration > 0) {
         phase_compensation = fmaxf(0, st_get_spindle_sync_offset());
         // Use the exact speed already prepared by grbl. Recomputing nominal
         // speed here would also mutate the planner's RPM tracking state.
@@ -171,6 +190,14 @@ void IRAM_ATTR h5_spindle_idle(void) { tracking = waiting = false; }
 void IRAM_ATTR h5_spindle_block(stepper_t *stepper)
 {
     if (!stepper->new_block) return;
+    if (entry_armed && stepper->exec_block->sync_preload) {
+        // Anchor the upcoming Z block to the acquired entry phase plus its
+        // programmed plunge duration. Preserve that origin across the handoff.
+        int64_t counts = oriented_position();
+        origin = floor_turn(counts - index_phase) * H5_ENCODER_CPR + index_phase + entry_advance;
+        entry_armed = false;
+    }
+    if (stepper->exec_block->sync_preloaded) entry_cutting = true;
     tracking = stepper->exec_segment->spindle_sync;
     waiting = false;
     if (tracking) {

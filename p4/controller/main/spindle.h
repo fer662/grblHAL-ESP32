@@ -18,3 +18,7 @@ status_code_t h5_spindle_command(sys_state_t state, char *line);
 int64_t h5_spindle_position(void);
 void h5_spindle_follow(bool enabled);
 void h5_spindle_follow_braking(void);
+
+void h5_spindle_entry_arm(double seconds, double lead, double acceleration);
+bool h5_spindle_entry_cutting(void); // Latched until the next entry is armed.
+void h5_spindle_entry_prepare(void); // Clear the previous pass latch before submitting another entry.

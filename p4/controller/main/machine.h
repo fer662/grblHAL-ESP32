@@ -50,6 +50,7 @@
 #define H5_ENCODER_CPR 1200
 
 #define SPINDLE_SYNC_ENABLE 1
+#define SPINDLE_SYNC_PRELOAD 1 // Phase wait before Thread X plunge; queued Z starts without reacquisition.
 #define SPINDLE_SYNC_FEED_FORWARD 1
 #define SPINDLE_SYNC_PATH_LIMITS 1
 #define SPINDLE_SYNC_INDEX_ORIGIN 1

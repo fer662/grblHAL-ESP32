@@ -5,6 +5,14 @@ Turn/Thread geometry and records its earlier validation. See [OPERATIONS.md](OPE
 for Face, Cut, Ellipse, Gearbox, Cone, Async, parameter edits and the current
 operating limits. See [PORT_PROGRESS.md](PORT_PROGRESS.md) for final regression status.
 
+## Change in 0.3.26: acquire phase with X clear
+
+Thread queues a native X plunge and synchronized Z pass together. Phase acquisition
+runs before X moves; native exact-stop handoff replaces the post-plunge index wait.
+X timing uses the rounded distance and configured rate/acceleration; no Z travel
+is subtracted. Thread waits clear at stopped startup; an interrupted entry retracts
+and re-arms the same pass. See [current sequence and tests](THREADING.md).
+
 ## Change in 0.3.24: spindle-off startup, retained passes and machine state
 
 Removed the profile minimum RPM, preview-derived ceiling, RPM-window cancellation

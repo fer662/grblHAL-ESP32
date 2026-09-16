@@ -11,7 +11,7 @@ a separate disconnected, enable-locked build.
 | Cone | Gearbox motion with X/Z slope `-ratio/2 × auxiliary-direction sign`, clipped to both axes' bounds. X is radial. |
 | Async | Z advances at signed configured mm/s using normal acceleration, with manual override and resume. |
 | Turn | Repeated G95 feed-per-revolution Z cuts with linear X depth progression and clearance returns. Acceleration and deceleration stay within the entered Z endpoints. |
-| Thread | Indexed G33 Z cuts with lead = pitch × starts and phase registration. X reaches depth before the Z-only pass and retracts after Z stops. Preview reports Z endpoints and travel at cutting depth. |
+| Thread | Phase-gated entry and indexed Z cuts with lead = pitch × starts and phase registration. X reaches depth before the Z-only pass and retracts after Z stops. Preview reports Z endpoints and travel at cutting depth. |
 | Face | Repeated X cuts with Z depth progression and clearance; native G95 feed accelerates and decelerates at the specified X endpoints. |
 | Cut | Progressively deeper X plunges, returning to the X start each pass; Z remains fixed. |
 | Ellipse | Scaled quarter-ellipse X/Z paths per depth, retaining the original spindle-progress parameterization and auxiliary direction. Chords feed native lookahead. |
@@ -24,14 +24,17 @@ Async arm from START and remain armed at a bound. STOP decelerates, discards
 queued commands and resets parser state while retaining the stopped position.
 There is no automatic recovery retract after cancellation.
 
-Profile cycles may be started with the spindle stopped. Positioning and X/depth
-infeed execute, then the cut waits armed for rotation. There is no minimum RPM,
+Profile cycles may be started with the spindle stopped. Thread positions Z and
+waits with X clear before its phase-timed plunge; other profiles position and
+infeed, then wait armed for rotation. There is no minimum RPM,
 preview-derived RPM ceiling or five-second Thread index timeout. Stopping the
 spindle during cutting decelerates and retains the pass/depth. Restart in the
 same direction resumes the remaining cut; restart in reverse retraces the cut
 and waits at its starting station, without advancing the depth. Thread reacquires
 spindle phase at the stopped position. STOP is an explicit cancellation and does
-not auto-resume. Turn/Face/Cut/Ellipse still use G95; Thread uses G33.
+not auto-resume. Interrupted Thread acquisition/plunge retracts and re-arms the
+same entry; a stopped Z cut resumes without a new plunge. Turn/Face/Cut/Ellipse
+still use G95; Thread uses the native synchronized planner/stepper.
 
 When started at zero RPM, pitch sign selects the initial travel direction as
 with the old firmware. A reverse-running spindle at preview/start selects the
@@ -70,8 +73,8 @@ The last depth is retained. It never jumps out of a cut halfway through.
   The last saved machine position and native G54 offset are restored at startup.
   This assumes the axes did not move while unpowered; restoration is not homing.
   G18 is the supported arc plane; Y and G76 are rejected.
-- Thread infeeds X at stationary Z, waits for phase, then makes a native G33
-  Z-only pass at depth. X retracts after Z stops. Preview reports commanded
+- Thread waits for phase with X clear, then executes a queued X-only plunge
+  and synchronized Z-only pass, without another index wait at depth. X retracts after Z stops. Preview reports commanded
   infeed/retract Z positions and travel at depth; a 10 mm span has 9.995 mm travel
   after the one-step approach. Native acceleration and axis maximum rates remain.
   See [threading](THREADING.md). Clearance is separate from cutting-axis bounds.

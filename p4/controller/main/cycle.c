@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "cycle.h"
+#include "thread_entry.h"
 #include "follow.h"
 #include "freertos/FreeRTOS.h"
 #include "critical.h"
@@ -24,6 +25,7 @@ static uint32_t command_id;
 static bool waiting_ack, cancel_requested, trace_enabled;
 static bool pausing, internal_reset, recovering, reverse_cut;
 static int cut_spindle_direction;
+static bool thread_entry, restart_entry;
 static char stop_reason[96] = "Cycle cancelled";
 static const char *const names[] = {
     "Setup",   "Retract", "Approach", "Take up",         "Infeed",        "Register",      "Spindle", "Cut",
@@ -134,7 +136,7 @@ void h5_cycle_reset(void)
         h5_critical_exit(&lock);
         return;
     }
-    internal_reset = pausing = recovering = false;
+    internal_reset = pausing = recovering = thread_entry = restart_entry = false;
     h5_spindle_profile(false);
     h5_operation_release(H5_OWNER_PROFILE);
     h5_critical_enter(&lock, 2000 + __LINE__);
@@ -202,6 +204,13 @@ static void emit(void)
         double unused;
         h5_cycle_point(&plan, pass, 0, &infeed, &approach, &unused);
     }
+    if (stage == 4 && plan.indexed) {
+        // Keep X clear through acquisition. Infeed and cut are queued together
+        // at stage 7, after the phase and spindle direction have been selected.
+        h5_spindle_entry_prepare();
+        thread_entry = true;
+        stage = 5;
+    }
     if (stage == 5 && !prepare_cut()) return;
     if (stage == 7 && h5_spindle_profile_rpm() * cut_spindle_direction <= 0) {
         // Spindle changed between the phase/M3 commands and cut submission.
@@ -241,7 +250,9 @@ static void emit(void)
             h5_cycle_point(&plan, pass, segment + 1, &x, &z, &feed);
             if (reverse_cut) h5_cycle_point(&plan, pass, segment, &x, &z, &unused);
             snprintf(line, sizeof(line), "G90G95G53G1X%.6fZ%.6fF%.6f", x, z, feed);
-        } else if (plan.indexed)
+        } else if (plan.indexed && thread_entry)
+            snprintf(line, sizeof(line), "$P4THREADENTRY");
+        else if (plan.indexed)
             snprintf(line, sizeof(line), "G91G33%c%.6fK%.6f", plan.cut_axis,
                      (reverse_cut ? approach : endpoint) - axis_position(plan.cut_axis), plan.lead);
         else
@@ -283,7 +294,7 @@ static void poll_cycle(void)
     if (begin) {
         pass = start = stage = segment = 0;
         waiting_ack = cancel_requested = false;
-        pausing = internal_reset = recovering = reverse_cut = false;
+        pausing = internal_reset = recovering = reverse_cut = thread_entry = restart_entry = false;
         char error[96];
         h5_cycle_machine_t machine = {.x = (double)sys.position[0] / settings.axis[0].steps_per_mm,
                                       .z = (double)sys.position[2] / settings.axis[2].steps_per_mm,
@@ -337,8 +348,10 @@ static void poll_cycle(void)
         stop = true;
     }
     double rpm = h5_spindle_profile_rpm();
+    if (thread_entry && stage == 7 && waiting_ack && h5_spindle_entry_cutting())
+        thread_entry = false;
     if (!stop && stage == 7 && waiting_ack &&
-        (rpm * cut_spindle_direction < 0 || (rpm == 0 && !h5_spindle_waiting_index()))) {
+        (rpm * cut_spindle_direction < 0 || (rpm == 0 && (thread_entry || !h5_spindle_waiting_index())))) {
         h5_status_t completed;
         h5_bridge_snapshot(&completed);
         // A cut that has already reached its endpoint must still retract,
@@ -348,6 +361,7 @@ static void poll_cycle(void)
     }
     if (stop || pausing) {
         if (!cancel_requested) {
+            restart_entry = thread_entry;
             h5_spindle_follow_braking();
             h5_bridge_discard_cycle_commands();
             // G33 intentionally disables feed hold. Motion cancel still uses
@@ -412,7 +426,8 @@ static void poll_cycle(void)
         }
         if (stage == 0 && recovering) {
             recovering = false;
-            stage = 5;
+            stage = restart_entry ? 1 : 5;
+            restart_entry = false;
         } else if (stage == 7 && reverse_cut) {
             stage = 5; // Retraced to the start: wait without retracting or advancing depth.
         } else if (stage == 10) {
@@ -451,6 +466,12 @@ void h5_cycle_poll(void)
 }
 status_code_t h5_cycle_command(sys_state_t state, char *line)
 {
+    if (!strcmp(line, "P4THREADENTRY")) {
+        if (state != STATE_IDLE || !published.active || stopping || !plan.indexed ||
+            stage != 7 || !thread_entry || h5_axis_change_pending() || h5_update_active())
+            return Status_IdleError;
+        return h5_thread_entry_execute(h5_cycle_depth(&plan, pass), plan.finish, plan.lead);
+    }
     if (!strcmp(line, "P4ADVANCE"))
         return h5_cycle_advance() ? Status_OK : Status_IdleError;
     if (!strcmp(line, "P4RELEASE")) {

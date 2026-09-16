@@ -11,6 +11,14 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
 ## Current scope
 
+**0.3.26 moves Thread's phase wait ahead of the X plunge.** The entry and Z cut
+are queued together in the native planner, with an exact stop between axes and
+no second index wait at depth. Phase timing includes X plunge duration and Z
+acceleration. X stays at 25 mm/s² and 5 mm/s maximum; thread endpoints are unchanged.
+Thread now waits clear when armed with the spindle off. An interrupted entry
+retracts/re-arms the same pass; an interrupted Z cut retains its existing resume
+behavior. See [threading and simulation limits](THREADING.md).
+
 **0.3.25 restores X acceleration to 25 mm/s² after stalls with the 500 mm/s² trial.**
 A one-time native settings migration replaces that trial value and preserves other
 tuning. Normal X jogging remains 1 mm/s; Rapids remains 5 mm/s. STEP selects
@@ -372,8 +380,8 @@ version, settings version, core source inventory and ISR dependencies on every
 core upgrade. Do not advance the core automatically from a moving branch.
 
 The core submodule points to `https://github.com/fer662/grblHAL-core`, branch
-`codex/spindle-tracking`, commit `c99424f`.
-It has seven isolated commits over upstream `516e5ad80757bd2eba86bff18feb613ca121dc16`:
+`codex/spindle-tracking`, commit `2832c5c`.
+It has eight isolated commits over upstream `516e5ad80757bd2eba86bff18feb613ca121dc16`:
 
 | Commit | Purpose |
 | --- | --- |
@@ -384,6 +392,7 @@ It has seven isolated commits over upstream `516e5ad80757bd2eba86bff18feb613ca12
 | `09df51b` | Avoid waiting for a second completion when cancellation and completion coincide. |
 | `e59703f` | Opt-in continuous synchronized blocks retain one spindle origin and acceleration phase reference; disabled in the P4 port since 0.3.23. |
 | `c99424f` | Configurable index-wait timeout and path-rate headroom; upstream defaults remain 5 s and 90%, P4 selects unlimited wait and 100% of configured rate. |
+| `2832c5c` | Opt-in phase-gated entry before a synchronized cutting block, exact-stop handoff, retained phase origin and stable entry deceleration timing. |
 
 The original `codex/spindle-segment-time` branch retains only the first fix.
 Preserve this separation when merging/rebasing upstream; drop a local patch only

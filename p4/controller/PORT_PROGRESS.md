@@ -6,6 +6,32 @@ Earlier acceptance used a disconnected Waveshare P4 with enables locked. The
 0.3.3 main build enables normal axis controls for the operator-requested first
 unloaded Z test; installation status and remaining checks are recorded below.
 
+## 0.3.26 Thread phase wait before plunge (built; not installed)
+
+Replaces the post-plunge two-index wait with a phase-gated native X/Z pair. X
+plunge duration and Z acceleration phase advance determine the acquisition phase
+while X is clear. Both blocks are queued before execution, with a zero-speed
+junction and no new index wait between them. Current X acceleration/rate and
+Z endpoints are unchanged. Thread starts armed with X clear when the spindle is
+stopped. Entry interruption retracts/re-arms the same pass; mid-cut resume remains
+ordinary G33. Explicit STOP cancels without an automatic retract.
+
+Core changes are opt-in `SPINDLE_SYNC_PRELOAD` metadata, startup gating, exact-stop
+junction and pre-established phase origin. Entry deceleration clamps tiny floating
+point endpoint residue to avoid a spurious near-zero-speed timing tail. The port
+validates both soft-limit targets before queuing either and retains disabled-axis
+checks for the internal entry command. See [threading](THREADING.md).
+
+Validation: production entry queue/phase/index code plus native planner/segment/
+step ISR simulation passed, including all depths at 50–500 RPM, hand-turn rates,
+phases/starts, both travel directions, X acceleration variants, small RPM changes,
+soft-limit rejection and cancellation. Normal-acceleration 50–500 RPM handoffs
+measured about 5–11 ms in simulation; no second index wait. Phase displacement at
+handoff stayed below 0.020 mm and steady-region error below 0.010 mm across the
+suite. Profile lifecycle/emitter, preview, enables, cancellation, index wait and
+existing native G33 regressions (including `--without-preload`) passed. ESP32-P4 build 0.3.26 passed with 22% OTA
+space free. No installation or physical lathe motion test performed.
+
 ## 0.3.25 reduce X acceleration (OTA uploaded; boot confirmation pending)
 
 Restores normal-build X acceleration from the 500 mm/s² trial to 25 mm/s² after
