@@ -35,7 +35,13 @@ harness = r'''
 #define ESP_OK 0
 #define Alarm_MotorFault 1
 static int GPIO;
-static unsigned gpio[64], alarm_code, timer_stops, spindle_idle_calls;
+static unsigned gpio[64], alarm_code, timer_stops, spindle_idle_calls, timer_starts;
+#define AXES_BITMASK 5
+#define ESP_ERROR_CHECK(call) assert((call) == ESP_OK)
+static bool allowed;
+static unsigned wake_hook_calls;
+static bool motion_allowed(void) { return allowed; }
+static void on_wake(void) { wake_hook_calls++; }
 static void gpio_ll_set_level(void *dev, unsigned pin, unsigned level)
 { (void)dev; gpio[pin] = level; }
 static unsigned gpio_ll_get_level(void *dev, unsigned pin)
@@ -58,6 +64,10 @@ static int gptimer_get_raw_count(gptimer_handle_t timer, uint64_t *out)
 { (void)timer; *out = now; return ESP_OK; }
 static int gptimer_set_alarm_action(gptimer_handle_t timer, const gptimer_alarm_config_t *alarm)
 { (void)timer; alarm_enabled = alarm != 0; alarm_at = alarm ? alarm->alarm_count : 0; return ESP_OK; }
+static int gptimer_set_raw_count(gptimer_handle_t timer, uint64_t value)
+{ (void)timer; now = value; return ESP_OK; }
+static int gptimer_start(gptimer_handle_t timer)
+{ (void)timer; timer_starts++; return ESP_OK; }
 static void gptimer_stop(gptimer_handle_t timer) { (void)timer; timer_stops++; }
 static void system_set_exec_alarm(unsigned code) { alarm_code = code; }
 static void irq_disable(void) {}
@@ -76,10 +86,14 @@ static bool p4_motion_idle(void) { return !running && !pulse_phase; }
 static unsigned step_hook_calls;
 static void step_hook(axes_signals_t steps) { assert(steps.mask); step_hook_calls++; }
 static struct {
+    bool (*motion_allowed)(void);
+    void (*on_wake)(void);
     void (*on_idle)(void);
     void (*on_block)(stepper_t *);
     void (*on_step)(axes_signals_t);
-} hooks = {p4_spindle_idle, p4_spindle_block, step_hook};
+} hooks = {motion_allowed, on_wake, p4_spindle_idle, p4_spindle_block, step_hook};
+static uint64_t previous_alarm_time;
+static uint32_t expected_alarm_interval;
 typedef struct { unsigned count; } pulse_trace_t;
 static pulse_trace_t trace_x, trace_z;
 static void trace_edge(pulse_trace_t *trace, uint64_t time) { (void)time; trace->count++; }
@@ -100,6 +114,7 @@ for signature in [
     'static bool IRAM_ATTR pulse_alarm(',
     'static void IRAM_ATTR pulse_start(',
     'static void IRAM_ATTR cycles(',
+    'static void wake(',
 ]:
     harness += function(signature) + '\n'
 harness += r'''
@@ -110,6 +125,7 @@ static void reset(void)
     fault = running = outputs_ready = reset_after_pulse = false;
     pulse_phase = alarm_code = timer_stops = 0;
     direction = disabled_axes = step_hook_calls = 0; now = 1000;
+    allowed = true; timer_starts = wake_hook_calls = 0;
     step_invert.mask = direction_invert.mask = 0;
     enable_invert.mask = 1;
 }
@@ -166,6 +182,17 @@ int main(void)
     assert(fault && alarm_code == Alarm_MotorFault && diag.overlaps == 1);
     enable((axes_signals_t){.mask=5}, false);
     assert(gpio[P4_X_ENABLE] == 1 && gpio[P4_Z_ENABLE] == 0);
+
+    reset(); allowed = false; // Startup incomplete or update mode entered.
+    wake();
+    assert(fault && !running && !timer_starts && !wake_hook_calls);
+    assert(gpio[P4_X_ENABLE] == 1 && gpio[P4_Z_ENABLE] == 0);
+    allowed = true; wake(); // Readiness cannot clear a latched motor fault.
+    assert(!running && !timer_starts);
+    reset();
+    wake();
+    assert(running && outputs_ready && timer_starts == 1 && wake_hook_calls == 1);
+    wake(); assert(timer_starts == 1); // Already running.
 
     reset(); cycles(249);
     assert(fault && alarm_code == Alarm_MotorFault);

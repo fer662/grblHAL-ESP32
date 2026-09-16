@@ -1,6 +1,6 @@
 # Experimental ESP32-P4 driver
 
-This branch isolates ESP32-P4 hardware support from the H5 touchscreen application.
+This branch isolates ESP32-P4 hardware support from the touchscreen lathe application.
 It is based on `grblHAL/ESP32` at `1cea7438a4a0a9eda35106e53a0944ae4f821d35`.
 The existing ESP32/S3 driver files and `main/grbl` submodule remain unchanged.
 The core stays at upstream `516e5ad80757bd2eba86bff18feb613ca121dc16`.
@@ -16,7 +16,7 @@ The core stays at upstream `516e5ad80757bd2eba86bff18feb613ca121dc16`.
 
 The grbl task and its peripheral interrupts are initialized on CPU 1. An embedding
 application owns scheduling of its other tasks; this component does not globally
-wrap FreeRTOS task creation or impose an H5-specific UI readiness check.
+wrap FreeRTOS task creation or impose an application-specific UI readiness check.
 
 ## Build
 
@@ -39,7 +39,7 @@ idf.py -C p4/example -B build-axis -DP4_BENCH_ONLY=OFF build
 Example settings are not machine calibration. Review the board map, driver enable
 polarity, electrical interface and motion parameters before using outputs. The
 example uses a standard single-application IDF partition layout and has no OTA;
-its partition table is not a drop-in replacement for an existing H5 installation.
+its partition table is not a drop-in replacement for an existing lathe controller installation.
 This extraction has not been flashed or commissioned on a machine.
 
 UART0 is the grbl stream at 115200 8N1. `$P4` reports pulse counts, timing faults,
@@ -57,10 +57,28 @@ The example demonstrates startup and the required board/configuration macros.
 Call `p4_storage_init()` before `grbl_enter()`; start the latter on a dedicated
 CPU 1 task. Keep all access to core state and command processing on that task.
 
-H5 retains its existing application branch during integration. It has **not**
-been migrated to consume this extracted component yet. The old
-`codex/p4-motion-driver` and `codex/p4-usb-bringup` branches remain available for
-existing pins; they are not ancestors of this clean P4 branch.
+To supply your own serial/storage/spindle and application policy, set
+`GRBLHAL_P4_CUSTOM_SERVICES=ON`, then register a `p4_driver_hooks_t` table with
+`p4_driver_configure()` before `grbl_enter()`. The table is copied into internal
+RAM. `initialize` is required; the other callbacks are optional. ISR callbacks
+(`on_idle`, `on_block`, `on_step`) must be IRAM-safe and nonblocking. Foreground
+callbacks execute on the grbl task. The application must arrange its own linker
+placement for interrupt callbacks and their callees/data.
+
+`motion_allowed` gates motor readiness and wakeup; the application owns startup
+and update policy. `p4_set_disabled_axes()` accepts changes only after the pulse
+service is idle; the caller must cancel/drain the planner first. The driver then
+masks both enable signals and pulses for disabled axes. Diagnostics are available
+through `p4_driver_snapshot()` without exposing application-specific state.
+
+Set `GRBLHAL_CORE_ROOT` to the parent directory containing a separate `grbl`
+checkout to pin core independently. The default remains this repo's `main/grbl`.
+The configuration header is a public C compile option so embedding code sees the
+same core types and feature switches as the driver.
+
+[esp32-p4-lathe-controller](https://github.com/fer662/esp32-p4-lathe-controller)
+consumes this component through these hooks. Historical integration branches
+remain available for existing pins; they are not ancestors of this clean branch.
 
 ## Scope and limits
 
@@ -82,7 +100,7 @@ The timer service detects overlaps and missed deadlines and latches a motor faul
 Software PCNT observations cannot establish connector pulse width, jitter, drive
 response or machining accuracy. The inherited timer/FPU approach has prior P4
 bench evidence; this independently extracted configuration needs fresh hardware
-validation. Do not apply the H5 application's historical measurements to it.
+validation. Do not apply the integrated application's historical measurements to it.
 
 ## Provenance and review
 
