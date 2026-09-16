@@ -474,6 +474,24 @@ No remote motion commands or OTA upload were issued. Loaded thread phase/finish
 acceptance remains pending. Run-in/run-out occur at cutting depth and are not
 promised as usable thread; the preview's usable region is an estimate.
 
+## 0.3.16 preview uses displayed zero and units
+
+Operator screenshots showed Z limits 0..10 but preview -1.5..8.5. Limit/DRO
+labels applied the UI origin offset while the preview printed raw machine mm.
+All preview positions now apply the corresponding X/Z display origin and selected
+units. Lead, run-in/out and usable length convert units without origin offsets.
+The preview explicitly identifies main-screen zero/units and radial slide travel.
+The planner, emitted movement, grblHAL G54 offsets and X0/Z0 behavior are unchanged.
+
+A host test executing the production formatter passed the screenshot case,
+independent X/Z origins, facing's axis swap, mm/in values, and thread-region
+positions versus lengths. It also verifies the plan remains byte-for-byte
+unchanged. Actual LVGL Turn/mm and Thread/inch renders were visually inspected;
+the latter's text clears the RUN button. The normal IDF 5.5.2 build passed.
+Application SHA-256:
+`ee1083c4cf9109c57d75e622f1bd467135e0ba6c260e00d2fba88b191edfed4b`.
+OTA installation is pending. No connected motion tests were run.
+
 ## Hardware acceptance still required
 
 - [ ] Inspect external STEP/DIR pulse widths, jitter, skew and setup/hold at the connector.

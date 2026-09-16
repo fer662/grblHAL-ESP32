@@ -212,6 +212,38 @@ void setModeFromTask(int value)
     mode = value;
     notice.clear();
 }
+static void format_cycle_preview(const h5_cycle_plan_t &plan, char *text, size_t size)
+{
+    const double scale = measure == MEASURE_METRIC ? 1.0 : 1.0 / 25.4;
+    const char *unit = measure == MEASURE_METRIC ? "mm" : "in";
+    // Display offsets affect positions only. Lengths and lead only change units.
+    auto coordinate = [scale](char axis, double machine_mm) {
+        Axis *a = axis == 'X' ? &x : &z;
+        return (machine_mm + (double)a->originPos / steps_mm(a)) * scale;
+    };
+    char thread_region[200] = "";
+    if (plan.indexed)
+        snprintf(thread_region,sizeof(thread_region),
+            "Steady-pitch region (est.): Z %.3f to %.3f %s\n"
+            "Usable thread (est.): %.3f %s; margins are inside Z limits.\n",
+            coordinate('Z',plan.thread_start),coordinate('Z',plan.thread_end),unit,
+            fabs(plan.thread_end-plan.thread_start)*scale,unit);
+    snprintf(text,size,
+        "%s cycle preview\n\n%u depth passes x %u starts | lead %.4f %s/rev\n"
+        "%c travel bounds: %.3f to %.3f %s\nApproach: %.3f %s | End: %.3f %s\n"
+        "%c infeed: %.3f to %.3f %s | Retracted: %.3f %s\n"
+        "Run-in: %.3f %s | Run-out: %.3f %s\n%s\n"
+        "Keep spindle between 30 and %.0f RPM in the current direction.\n"
+        "Coordinates use the main-screen zero and units; X is slide travel.\n"
+        "Cutting-axis travel stays within bounds; clearance retract is separate.\n"
+        "STOP decelerates and cancels the pass; it does not resume mid-pass.",
+        h5_cycle_name(plan.config.operation),plan.config.passes,plan.starts,plan.lead*scale,unit,
+        plan.cut_axis,coordinate(plan.cut_axis,plan.cut_start),coordinate(plan.cut_axis,plan.cut_end),unit,
+        coordinate(plan.cut_axis,plan.approach),unit,coordinate(plan.cut_axis,plan.finish),unit,
+        plan.depth_axis,coordinate(plan.depth_axis,plan.depth_start),coordinate(plan.depth_axis,plan.depth_end),unit,
+        coordinate(plan.depth_axis,plan.clearance),unit,
+        plan.lead_in*scale,unit,plan.run_out*scale,unit,thread_region,plan.config.rpm_limit);
+}
 static void preview_cycle()
 {
     if (status.moving || status.held || status.alarm || !status.ready || h5_cycle_busy()) {
@@ -247,25 +279,8 @@ static void preview_cycle()
     lv_obj_move_foreground(cycle_panel);
     lv_obj_t *label=lv_label_create(cycle_panel);
     lv_obj_set_width(label,940);
-    char thread_region[180] = "";
-    if (plan.indexed)
-        snprintf(thread_region,sizeof(thread_region),
-            "Steady-pitch region (est.): Z %.3f to %.3f mm\n"
-            "Usable thread (est.): %.3f mm; margins are inside Z limits.\n",
-            plan.thread_start,plan.thread_end,fabs(plan.thread_end-plan.thread_start));
-    char text[1000];
-    snprintf(text,sizeof(text),
-        "%s cycle preview\n\n%u depth passes x %u starts | lead %.4f mm/rev\n"
-        "%c travel bounds: %.3f to %.3f mm\nApproach: %.3f mm | End: %.3f mm\n"
-        "%c infeed: %.3f to %.3f mm | Retracted: %.3f mm\n"
-        "Run-in: %.3f mm | Run-out: %.3f mm\n%s\n"
-        "Keep spindle between 30 and %.0f RPM in the current direction.\n"
-        "Coordinates above are machine coordinates; X is radial.\n"
-        "Cutting-axis travel stays within bounds; clearance retract is separate.\n"
-        "STOP decelerates and cancels the pass; it does not resume mid-pass.",
-        h5_cycle_name(preview_config.operation),preview_config.passes,plan.starts,plan.lead,
-        plan.cut_axis,plan.cut_start,plan.cut_end,plan.approach,plan.finish,plan.depth_axis,plan.depth_start,plan.depth_end,plan.clearance,
-        plan.lead_in,plan.run_out,thread_region,preview_config.rpm_limit);
+    char text[1100];
+    format_cycle_preview(plan,text,sizeof(text));
     lv_label_set_text(label,text); lv_obj_align(label,LV_ALIGN_TOP_LEFT,5,5);
     lv_obj_t *run=cycle_run=lv_btn_create(cycle_panel); lv_obj_set_size(run,300,65); lv_obj_align(run,LV_ALIGN_BOTTOM_RIGHT,-10,-10);
     lv_obj_t *run_text=lv_label_create(run); lv_label_set_text(run_text,"RUN BENCH CYCLE"); lv_obj_center(run_text);

@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""Check production preview formatting against display zeros and units; no hardware."""
+from pathlib import Path
+import subprocess
+import tempfile
+
+root = Path(__file__).resolve().parents[1]
+source = (root / 'components/h5_ui/ui.cpp').read_text()
+formatter = source[source.index('static void format_cycle_preview('):source.index('static void preview_cycle()')]
+harness = r'''
+#include "cycle_plan.h"
+#include <cassert>
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <string>
+struct Axis { long originPos=0; } x,z;
+static constexpr int MEASURE_METRIC=0;
+static int measure=MEASURE_METRIC;
+static float steps_mm(Axis *axis) { return axis==&x ? 1200 : 200; }
+FORMATTER
+int main() {
+    h5_cycle_config_t c={};
+    c.operation=H5_TURN;c.passes=10;c.starts=1;c.pitch=.1;c.aux_forward=true;
+    c.x_min=0;c.x_max=1;c.z_min=-1.5;c.z_max=8.5;c.rpm_limit=500;
+    h5_cycle_machine_t m={0,0,400,50,960,200,25,60,1200};
+    h5_cycle_plan_t plan;char error[96],text[1100];
+    z.originPos=300; // Screenshot regression: displayed Z 0..10, machine Z -1.5..8.5.
+    assert(h5_cycle_plan(&c,&m,&plan,error,sizeof error));
+    const auto saved=plan;
+    format_cycle_preview(plan,text,sizeof text);
+    assert(strstr(text,"Z travel bounds: 0.000 to 10.000 mm"));
+    assert(strstr(text,"Approach: 0.000 mm | End: 10.000 mm"));
+    assert(strstr(text,"X infeed: 0.000 to 1.000 mm | Retracted: -0.500 mm"));
+    assert(strstr(text,"lead 0.1000 mm/rev"));
+    assert(strstr(text,"Run-in: 0.000 mm | Run-out: 0.000 mm"));
+    assert(strstr(text,"main-screen zero and units"));
+    assert(!strstr(text,"machine coordinates"));
+    assert(!memcmp(&saved,&plan,sizeof plan)); // Presentation must not change motion geometry.
+    measure=1;format_cycle_preview(plan,text,sizeof text);
+    assert(strstr(text,"Z travel bounds: 0.000 to 0.394 in"));
+    assert(strstr(text,"Retracted: -0.020 in"));
+    assert(strstr(text,"lead 0.0039 in/rev"));
+    assert(!strstr(text," mm"));
+    assert(!memcmp(&saved,&plan,sizeof plan));
+    // Facing swaps the cutting and depth axes; apply each axis's own zero.
+    measure=MEASURE_METRIC;x.originPos=1200;c.operation=H5_FACE;
+    assert(h5_cycle_plan(&c,&m,&plan,error,sizeof error));
+    format_cycle_preview(plan,text,sizeof text);
+    assert(strstr(text,"X travel bounds: 1.000 to 2.000 mm"));
+    assert(strstr(text,"Z infeed: 0.000 to 10.000 mm | Retracted: -0.500 mm"));
+    c.operation=H5_THREAD;
+    assert(h5_cycle_plan(&c,&m,&plan,error,sizeof error));
+    format_cycle_preview(plan,text,sizeof text);
+    assert(strstr(text,"Approach: 0.005 mm | End: 10.000 mm"));
+    assert(strstr(text,"region (est.): Z 0.255 to 9.770 mm"));
+    assert(strstr(text,"Usable thread (est.): 9.515 mm"));
+    assert(strstr(text,"Run-in: 0.250 mm | Run-out: 0.230 mm"));
+    measure=1;format_cycle_preview(plan,text,sizeof text);
+    assert(strstr(text,"region (est.): Z 0.010 to 0.385 in"));
+    assert(strstr(text,"Usable thread (est.): 0.375 in"));
+    assert(strstr(text,"Run-in: 0.010 in | Run-out: 0.009 in"));
+    assert(strstr(text,"does not resume mid-pass.")); // Entire footer fits the buffer.
+    puts("PASS: preview zeros, axis selection, metric/inch positions and lengths; geometry unchanged");
+}
+'''.replace('FORMATTER', formatter)
+with tempfile.TemporaryDirectory() as directory:
+    path = Path(directory)
+    (path / 'test.cpp').write_text(harness)
+    include = str(root / 'components/h5_ui')
+    subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-I', include,
+                    '-c', str(root / 'components/h5_ui/cycle_plan.c'), '-o', str(path / 'plan.o')], check=True)
+    subprocess.run(['c++', '-std=c++17', '-Wall', '-Wextra', '-Werror', '-I', include,
+                    str(path / 'test.cpp'), str(path / 'plan.o'), '-o', str(path / 'test')], check=True)
+    subprocess.run([str(path / 'test')], check=True)

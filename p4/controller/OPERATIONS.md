@@ -45,8 +45,9 @@ The last depth is retained. It never jumps out of a cut halfway through.
 
 - The exact calibration remains X 1200 and Z 200 steps/mm, spindle 1200 effective
   counts/revolution; limits remain X 60 and Z 960 mm/min, acceleration 25/50 mm/s².
-- X is radial; operation previews show machine mm, independent of readout zeros,
-  units or diameter display. G18 is the supported arc plane; Y and G76 are rejected.
+- X is radial slide travel. Operation previews use the current main-screen zero
+  and mm/in units; the planner and generated moves retain machine-mm coordinates.
+  G18 is the supported arc plane; Y and G76 are rejected.
 - Thread reserves acceleration run-in and braking run-out inside the Z bounds.
   Return targets the start bound, takes up one step inward, and G33 ends at the
   opposite bound. The preview reports the estimated steady-pitch region. If the

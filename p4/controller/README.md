@@ -10,6 +10,11 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
 ## Current scope
 
+**0.3.16 makes cycle previews use the main-screen zero and units.** Bounds,
+approach, infeed, retract and thread-region positions now agree with the DRO and
+limit buttons. Distances and lead convert units without adding origin offsets.
+Motion coordinates are unchanged. See [coordinate handling](ASSISTED_CYCLES.md).
+
 **0.3.15 keeps Thread inside its entered Z bounds as well.** Synchronization
 run-in/run-out and the one-step approach now consume space inside the span.
 The preview shows the estimated usable thread region; spans too short for the

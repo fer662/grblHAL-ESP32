@@ -5,6 +5,28 @@ Turn/Thread geometry and records its earlier validation. See [OPERATIONS.md](OPE
 for Face, Cut, Ellipse, Gearbox, Cone, Async, parameter edits and the current
 operating limits. See [PORT_PROGRESS.md](PORT_PROGRESS.md) for final regression status.
 
+## Change in 0.3.16: consistent preview coordinates
+
+Cycle previews now use the main-screen zero and selected mm/in units for every
+position, including approach, retract and the estimated thread region. Lengths
+and lead only change units. For example, machine Z=-1.5..8.5 with a +1.5 mm
+readout offset appears as Z=0..10 in both the limit buttons and preview.
+The underlying plan and emitted machine-coordinate moves are unchanged.
+
+Actual LVGL previews: [Turn in mm](docs/turn-cycle-0316.png),
+[Thread in inches](docs/thread-inch-0316.png).
+
+### G53, G54 and the touchscreen zero
+
+The grblHAL core supports G53 (machine coordinates for one motion block) and
+G54/G55/etc. (persistent work-coordinate offsets). The touchscreen X0/Z0 actions
+currently set UI-local `originPos` values, separate from those core offsets.
+Assisted cycles position with G53 and cut with relative G91 moves, so their
+physical targets do not depend on the selected G54/G55 offset. This update only
+changes how their preview is presented; it does not make X0/Z0 program G54.
+Without homing, the current internal machine reference is not a repeatable
+physical machine datum across power cycles.
+
 ## Change in 0.3.15: bounded threading
 
 The original committed H5 cut used `posFromSpindle(..., true)` to clamp to its
@@ -44,8 +66,8 @@ below describe the pre-0.3.14 implementation where both used G33.
 3. Review the cycle preview. It shows radial X coordinates, cutting Z bounds,
    approach position, stopping endpoint, estimated usable thread region, retracted
    X position and maximum RPM. All
-   coordinates in this preview are explicitly **machine coordinates in mm**,
-   independent of the readout's display origin or selected display units.
+   coordinates in this preview use the **main-screen zero and selected units**.
+   The motion plan and diagnostic commands continue using machine millimeters.
 4. RUN BENCH CYCLE copies the configuration to the grbl task. The status line
    shows stage, pass and start. STOP cancels the cycle with controlled braking;
    a partially cut thread cannot be resumed with cycle-start.
@@ -190,12 +212,15 @@ cc -std=c11 -Wall -Wextra -Werror -Icomponents/h5_ui \
   components/h5_ui/cycle_plan.c tests/cycle_plan_test.c -lm -o /tmp/h5-cycle-plan-test
 /tmp/h5-cycle-plan-test
 python3 tests/cycle_commands_test.py
+python3 tests/cycle_preview_test.py
 ```
 
 The host command test executes the production command emitter with a simulated
 bridge and checks Turn/Face/Cut/Ellipse approach, cut and return targets for both
 spindle/pitch signs, both auxiliary directions and multiple passes. It also checks
-bounded Thread G33 commands, inward takeup and multi-start phase registration. These checks do not measure loaded motion.
+bounded Thread G33 commands, inward takeup and multi-start phase registration. The preview formatter test checks nonzero origins, both axes, metric/inch
+positions and lengths, and verifies that formatting does not change the plan.
+These checks do not measure loaded motion.
 
 Device regression (disconnected, enable-locked bench only):
 
