@@ -75,14 +75,20 @@ int main(void) {
                 if(pass && op==H5_ELLIPSE) { move(2); move(3); }
                 if(plan.indexed) assert(fabs(position[1]-plan.approach)<1e-6);
                 move(4);
-                if(plan.indexed) assert(fabs(position[0]-plan.clearance)<1e-6);
+                if(plan.indexed) {
+                    assert(fabs(position[0]-plan.thread_clearance)<1e-6);
+                    assert(fabs(position[1]-plan.approach)<1e-6); // X air approach did not move Z.
+                }
                 issue(5);
                 if(!plan.indexed) assert(!strcmp(emitted,"$P4PHASE=0"));
                 issue(6);
                 for(segment=0;segment<(op==H5_ELLIPSE?plan.segments:1);segment++) move(7);
                 double expected=op==H5_CUT ? plan.cut_start+(plan.cut_end-plan.cut_start)*(pass+1)/c.passes : plan.cut_end;
                 assert(fabs(position[plan.cut_axis=='X'?0:1]-expected)<1e-4);
-                if(plan.indexed) assert(fabs(position[1]-plan.finish)<1e-6);
+                if(plan.indexed) {
+                    assert(fabs(position[1]-plan.finish)<1e-6);
+                    assert(fabs(position[0]-plan.thread_clearance)<1e-6); // Near-surface withdrawal only.
+                }
                 move(8);
                 if(plan.indexed) {
                     assert(fabs(position[1]-plan.finish)<1e-6);

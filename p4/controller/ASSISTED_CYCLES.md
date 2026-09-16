@@ -5,6 +5,15 @@ Turn/Thread geometry and records its earlier validation. See [OPERATIONS.md](OPE
 for Face, Cut, Ellipse, Gearbox, Cone, Async, parameter edits and the current
 operating limits. See [PORT_PROGRESS.md](PORT_PROGRESS.md) for final regression status.
 
+## Change in 0.3.22: air clearance with stationary Z
+
+Before phase wait, X pre-positions one step outside the configured starting-X
+surface while Z stays at the approach point. Synchronized entry/withdrawal use
+this near-surface X position. The full clearance retract happens after Z stops.
+The starting-X limit must describe the stock surface; there is no contact sensing.
+All Z endpoints and thread registration remain unchanged. The preview explicitly
+shows X pre-position and post-stop retract as well as final-pass cutting stations.
+
 ## Change in 0.3.21: remove extra Thread easing
 
 Entry/withdrawal now use a trapezoidal-velocity X profile, sized separately for

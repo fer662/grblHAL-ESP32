@@ -16,7 +16,7 @@ static void thread_ramp_point(thread_ramp_t, unsigned, double *, double *);
 static thread_ramp_t thread_ramp(const h5_cycle_plan_t *p, unsigned pass)
 {
     double depth = round(h5_cycle_depth(p, pass)*p->x_steps_mm)/p->x_steps_mm;
-    double clear = round(p->clearance*p->x_steps_mm)/p->x_steps_mm;
+    double clear = p->thread_clearance;
     // Two X steps reserve the maximum endpoint rounding difference in a chord.
     double stroke = fabs(depth-clear) + 2/p->x_steps_mm;
     double peak = fmin(p->thread_x_rate, sqrt(stroke*p->thread_x_acceleration));
@@ -128,6 +128,10 @@ bool h5_cycle_plan(const h5_cycle_config_t *c, const h5_cycle_machine_t *m, h5_c
             return fail(error, size, "Invalid X motion settings for moving thread infeed");
         p->x_steps_mm = m->x_steps_mm;
         p->z_steps_mm = steps;
+        // Approach the configured stock surface with Z stationary. Keep one
+        // full native X step outside it through the phase wait and Z run-up.
+        double surface_steps = p->depth_start*m->x_steps_mm;
+        p->thread_clearance = (c->aux_forward ? floor(surface_steps)-1 : ceil(surface_steps)+1)/m->x_steps_mm;
         p->thread_x_rate = m->x_max_rate/60;
         p->thread_x_acceleration = m->x_acceleration;
         // Z run-up and braking stay at clearance, inside the entered bounds.
@@ -234,7 +238,7 @@ static void thread_ramp_point(thread_ramp_t r, unsigned point, double *fraction,
 void h5_thread_point(const h5_cycle_plan_t *p, unsigned pass, unsigned point, double *x, double *z)
 {
     double depth = round(h5_cycle_depth(p,pass)*p->x_steps_mm)/p->x_steps_mm;
-    double clear = round(p->clearance*p->x_steps_mm)/p->x_steps_mm;
+    double clear = p->thread_clearance;
     thread_ramp_t r = thread_ramp(p,pass);
     double begin,end;
     h5_thread_stations(p,pass,&begin,&end);

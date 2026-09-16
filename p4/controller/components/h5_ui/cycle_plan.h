@@ -23,7 +23,7 @@ typedef struct {
     int direction, spindle_direction;
     double lead, cut_start, cut_end, approach, finish;
     double entry_begin, full_begin, full_end, exit_end, x_steps_mm, z_steps_mm;
-    double thread_x_rate, thread_x_acceleration;
+    double thread_x_rate, thread_x_acceleration, thread_clearance;
     double cut_acceleration; // Configured mm/s^2, also used for thread speed feasibility.
     double depth_start, depth_end, clearance, takeup;
     unsigned starts, segments;

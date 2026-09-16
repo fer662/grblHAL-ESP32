@@ -1,6 +1,20 @@
 # Continuous clear-entry threading — introduced in 0.3.19
 
-## Current profile — 0.3.21
+## Current profile — 0.3.22
+
+Thread now approaches X to one native step outside the configured starting-X
+surface while Z is stationary. Phase wait and Z run-up happen at that near-surface
+position. The synchronized entry/withdrawal covers only the depth stroke plus
+that one-step stand-off. After Z stops, X completes the existing 0.5 mm clearance
+retract before returning Z. This removes air clearance from the Z transition
+budget without waiting for synchronization with X already at cutting depth.
+
+The configured depth-start X limit is treated as the stock surface. There is no
+contact sensor or independent stock measurement. The operator must establish
+that bound accordingly; the one-step stand-off is commanded geometry, not a
+measured clearance allowance for runout or tool/setup error.
+
+
 
 The quintic easing curve from 0.3.19/0.3.20 is removed. Each pass now uses its
 own acceleration / constant-speed / deceleration transition, sized from its
@@ -8,9 +22,11 @@ actual X stroke and the native X speed and acceleration settings. X maximum
 remains 5 mm/s; the 0.3.20 trial acceleration remains 500 mm/s².
 
 For Z 0..10 mm, X depth 0..1 mm, 0.5 mm clearance, lead 0.5 mm/rev and a 564 RPM
-ceiling, the final full-depth section is Z **1.610..8.395**, length **6.785 mm**.
-The first of five passes reaches its depth at Z 0.860 and withdraws at 9.145.
-The preview labels entry and withdrawal as final-pass positions. The prior
+ceiling, the final full-depth section is Z **1.145..8.860**, length **7.715 mm**.
+The first of five passes reaches its depth at Z 0.390 and withdraws at 9.615.
+The preview labels entry and withdrawal as final-pass positions and shows the
+near-surface pre-position before Z starts and the full retract after Z stops. Version 0.3.21 included the full 0.5 mm air stroke in each synchronized
+transition, giving 6.785 mm at full depth. The prior
 quintic profile at the same settings reported 4.355 mm (0.3.20); at X acceleration
 25 it reported 4.115 mm (0.3.19).
 
@@ -33,17 +49,18 @@ both. This is nominal full-depth travel, not proof of correct thread pitch durin
 start/stop transients. Stationary Z with the spindle turning can cut an annular
 mark/groove while X withdraws. The new shorter full-depth region is a consequence
 of choosing moving entry/withdrawal inside the same bounds, not a grblHAL limit.
-The current 3.215 mm difference consists of two 1.485 mm transitions, 0.120 mm
+The current 2.285 mm difference consists of two 1.020 mm transitions, 0.120 mm
 clear Z run-up, 0.120 mm braking, and the initial 0.005 mm take-up offset.
 
 ## Current pass
 
 1. Retract X and position Z one step inside the starting bound, taking up direction.
-2. Keep X at clearance while waiting for spindle phase and accelerating Z.
-3. Feed X in with an acceleration / cruise / deceleration transition while Z continues spindle-synchronous travel.
-4. Traverse the full-depth region at the selected lead.
-5. Withdraw X while Z is still moving; X reaches clearance before final Z braking.
-6. Stop at the opposite Z bound, return at clearance, repeat starts/passes.
+2. With Z stationary, approach X to one step outside the starting-X surface.
+3. Keep X there while waiting for spindle phase and accelerating Z.
+4. Feed X in with an acceleration / cruise / deceleration transition while Z continues spindle-synchronous travel.
+5. Traverse the full-depth region at the selected lead.
+6. Withdraw X while Z is still moving; reach the near-surface position before Z braking.
+7. Stop at the opposite Z bound, finish the full X clearance retract, return Z and repeat.
 
 Both Z travel limits remain hard endpoints of this assisted recipe; no run-up or
 pullout is placed beyond them. The original 0.5 mm radial clearance, linear depth
@@ -59,7 +76,7 @@ stations vary with pass depth; the preview reports the final pass. There is no s
 subtraction or estimated usable-region field. This describes commanded motion,
 not stock detection or a measurement of finished mechanical thread accuracy.
 
-For radial stroke D, X maximum V and X acceleration A, peak speed is
+For radial stroke D from the quantized near-surface position to the pass depth, X maximum V and X acceleration A, peak speed is
 `min(V, sqrt(D*A))`. Acceleration and braking each take `peak/A`; cruise takes
 `D/peak - peak/A`. Two X steps are added to sizing D to allow point rounding.
 At ceiling Z speed `v = lead * RPM / 60`, these durations become Z distances.

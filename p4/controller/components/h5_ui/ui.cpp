@@ -239,11 +239,13 @@ static void format_cycle_preview(const h5_cycle_plan_t &plan, char *text, size_t
     char geometry[650];
     if (plan.indexed)
         snprintf(geometry,sizeof(geometry),
-            "Sync/run-up: X clear; Z %.*f to %.*f %s\n"
+            "Before Z starts: X to %.*f %s (surface %.*f)\n"
+            "Sync/run-up: Z %.*f to %.*f %s\n"
             "Final-pass X infeed: Z %.*f to %.*f %s\n"
             "Full-depth thread: Z %.*f to %.*f %s | length %.*f %s\n"
             "Final-pass withdrawal: Z %.*f to %.*f %s | Z stop: %.*f %s\n"
-            "X depth: first %.*f, final %.*f %s | X clear: %.*f %s\n",
+            "X depth: first %.*f, final %.*f %s | After Z stops: X %.*f %s\n",
+            digits,coordinate('X',plan.thread_clearance),unit,digits,coordinate('X',plan.depth_start),
             digits,coordinate('Z',plan.approach),digits,coordinate('Z',plan.entry_begin),unit,
             digits,coordinate('Z',plan.entry_begin),digits,coordinate('Z',plan.full_begin),unit,
             digits,coordinate('Z',plan.full_begin),digits,coordinate('Z',plan.full_end),unit,

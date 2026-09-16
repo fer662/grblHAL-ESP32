@@ -11,6 +11,13 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
 ## Current scope
 
+**0.3.22 moves the Thread air-clearance stroke with Z stationary.** X approaches
+one step outside the configured starting-X surface before phase wait and Z
+run-up. It withdraws to there during the pass and completes the full clearance
+retract after Z stops. The same example now has 7.715 mm at full depth. The
+preview explicitly shows both X positions; this uses the entered X surface,
+not contact sensing. See [thread sequence](CONTINUOUS_THREADING.md).
+
 **0.3.21 removes the extra Thread easing curve.** Entry and withdrawal now use
 acceleration / cruise / deceleration sized to each pass, preserving native axis
 limits and spindle phase. The preview reports final-pass stations. The example

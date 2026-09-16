@@ -120,7 +120,7 @@ int main(void)
                 double x,z;h5_thread_point(&p,pass,point,&x,&z);
                 assert(z>=0 && z<=10 && x>=-.5 && x<=1);
                 assert((z-last_z)*dir>=-1e-9);last_z=z;
-                if(point<=1 || point>=H5_THREAD_BLOCKS-1) CLOSE(x,p.clearance);
+                if(point<=1 || point>=H5_THREAD_BLOCKS-1) CLOSE(x,p.thread_clearance);
                 if(point==H5_THREAD_RAMP_SEGMENTS+1) {CLOSE(z,begin);CLOSE(x,h5_cycle_depth(&p,pass));}
                 if(point==H5_THREAD_RAMP_SEGMENTS+2) {CLOSE(z,end);CLOSE(x,h5_cycle_depth(&p,pass));}
             }
@@ -136,13 +136,13 @@ int main(void)
     c.z_max=40;assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
     c.z_max=10;m.x_max_rate=300;
     assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
-    CLOSE(p.full_begin,2.480);CLOSE(p.full_end,7.525);CLOSE(p.exit_end,9.880);
+    CLOSE(p.full_begin,2.020);CLOSE(p.full_end,7.985);CLOSE(p.exit_end,9.880);
     m.x_max_rate=300;m.x_acceleration=500;
     assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
-    CLOSE(p.full_begin,1.610);CLOSE(p.full_end,8.395);CLOSE(p.exit_end,9.880);
+    CLOSE(p.full_begin,1.145);CLOSE(p.full_end,8.860);CLOSE(p.exit_end,9.880);
     double first_begin,first_end;
     h5_thread_stations(&p,0,&first_begin,&first_end);
-    CLOSE(first_begin,.860);CLOSE(first_end,9.145);
+    CLOSE(first_begin,.390);CLOSE(first_end,9.615);
     // Quantized chords must stay within configured X speed at the RPM ceiling.
     for(unsigned pass=0;pass<c.passes;pass++) {
         double px,pz;h5_thread_point(&p,pass,0,&px,&pz);
@@ -163,6 +163,8 @@ int main(void)
         c.rpm_limit=rpms[n];c.aux_forward=aux;m.rpm=rpms[n];
         m.x_max_rate=rates[r];m.x_acceleration=accelerations[a];
         assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
+        double outward=(c.aux_forward?-1:1)*(p.thread_clearance-p.depth_start);
+        assert(outward>=1/m.x_steps_mm-1e-9 && outward<=2/m.x_steps_mm+1e-9);
         for(unsigned pass=0;pass<c.passes;pass++) {
             double px,pz;h5_thread_point(&p,pass,0,&px,&pz);
             for(unsigned point=1;point<=H5_THREAD_BLOCKS;point++) {

@@ -87,7 +87,7 @@ void mc_override_ctrl_update(gc_override_flags_t flags) {sys.override.control=fl
 bool protocol_buffer_synchronize(void) {
  // Hardware index wait is simulated; it can only begin after all blocks exist.
  assert(plan_get_block_buffer_available()==100-H5_THREAD_BLOCKS);
- assert(sys.position[X_AXIS]==lround(profile.clearance*1200) && !pulses_x);
+ assert(sys.position[X_AXIS]==lround(profile.thread_clearance*1200) && !pulses_x);
  if(cancel_after<0) {sys.abort=true;return false;}
  st_prep_buffer();initial_lag=st_get_spindle_sync_offset();st_wake_up();
  unsigned interrupts=0;
@@ -131,7 +131,7 @@ static void run(double speed,int direction,unsigned pass) {
  assert(h5_thread_execute(&profile,pass)==Status_OK);
  assert(blocks==H5_THREAD_BLOCKS);
  assert(pulses_z==lround(fabs(profile.finish-profile.approach)*200));
- assert(sys.position[X_AXIS]==lround(profile.clearance*1200));
+ assert(sys.position[X_AXIS]==lround(profile.thread_clearance*1200));
  assert(sys.position[Z_AXIS]==lround(profile.finish*200));
  assert((first_x_z-profile.entry_begin)*direction>=-.0051);
  assert((profile.exit_end-last_x_z)*direction>=-.0051);

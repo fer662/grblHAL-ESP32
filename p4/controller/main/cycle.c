@@ -160,7 +160,7 @@ static void emit(void)
         snprintf(line, sizeof(line), "G90G94G53G0%c%.6f", plan.cut_axis, approach);
         break;
     case 4:
-        snprintf(line, sizeof(line), "G90G94G53G0%c%.6f", plan.depth_axis, plan.indexed ? plan.clearance : infeed);
+        snprintf(line, sizeof(line), "G90G94G53G0%c%.6f", plan.depth_axis, plan.indexed ? plan.thread_clearance : infeed);
         break;
     case 5:
         snprintf(line, sizeof(line), "$P4PHASE=%u", h5_cycle_phase(&plan, start));
@@ -200,7 +200,7 @@ static void emit(void)
         return;
     }
     waiting_ack = true;
-    message(plan.indexed && stage==4 ? "Keep X clear" : names[stage], true);
+    message(plan.indexed && stage==4 ? "Approach stock surface" : names[stage], true);
 }
 static void poll_cycle(void)
 {

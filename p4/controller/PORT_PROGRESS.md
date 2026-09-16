@@ -6,6 +6,20 @@ Earlier acceptance used a disconnected Waveshare P4 with enables locked. The
 0.3.3 main build enables normal axis controls for the operator-requested first
 unloaded Z test; installation status and remaining checks are recorded below.
 
+## 0.3.22 stationary-Z air approach/retract (built; not installed)
+
+Thread now approaches X to one native step outside the configured starting-X
+surface with Z stationary. Phase wait/run-up and the synchronized batch use
+that near-surface position; after Z stops, the existing full clearance retract
+runs before Z returns. Example full-depth travel improves from 6.785 to 7.715 mm.
+The preview shows pre-position, stock-surface assumption and post-stop retract.
+
+Native planner/ISR phase, endpoints, rates, all pass depths and cancellation tests
+passed with the new near-surface endpoints. Geometry sweeps check both infeed
+directions and clearance step rounding; emitter tests verify that air approach
+and final clearance retract leave Z stationary. G54/units preview tests and the
+ESP32-P4 build passed. No OTA or on-machine motion sent; stock contact is not sensed.
+
 ## 0.3.21 Thread transition timing (built; not installed)
 
 Replaced quintic easing with per-pass acceleration/cruise/deceleration. The
