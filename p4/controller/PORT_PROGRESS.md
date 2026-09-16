@@ -412,6 +412,36 @@ Application SHA-256:
 `732de0f03451e16d23685268957decbdbcba003bac6f4e7817561ee371579150`.
 OTA installation is pending; no connected motion tests were run.
 
+## 0.3.14 bounded non-thread cutting moves
+
+Operator reported Turn going beyond Z=10 by about 0.26 mm at 0.10 mm/rev.
+The existing Turn recipe shared Thread's indexed G33 lead-in/run-out. A host
+reproduction at 400 RPM (500 RPM preview ceiling) produced Z=10.250 approach,
+10.255 takeup and -0.230 finish for a 10-to-0 cut.
+
+Turn now uses the existing G95 feed-per-revolution path, with acceleration and
+deceleration inside its entered endpoints. Indexed geometry remains exclusive
+to Thread. The shared extra one-step approach was also removed from Face, Cut
+and Ellipse; the runtime emitter uses the same rule as the geometry preview.
+Depth/pass progression, pitch, auxiliary direction, 0.5 mm tool-clearance retract,
+fixed Z for Cut, and Thread lead-in/run-out/phase are preserved. The preview now
+explains that non-thread cutting-axis moves stay within bounds while the
+clearance retract may extend beyond the depth-axis bounds.
+
+Host geometry and production command-emitter tests passed for all non-thread
+profiles, both spindle and pitch signs, both auxiliary directions and multiple
+passes. Tests cover short Turn spans, ellipse points and generated approach,
+cut and return commands; Thread's original G33/takeup/phase reference commands
+still pass. The existing core cancellation/completion test passed. The offline
+bench verifier was updated for bounded G95 Turn and syntax-checked; it was not
+run against the connected lathe. No core or driver changes were needed.
+
+The normal IDF 5.5.2 build passed (22% OTA slot free). Application SHA-256:
+`82e7e7fa93f114a82411931293cc54fe96616246c07cd7f3090d63feca5c97d4`.
+OTA and loaded-machine acceptance are pending. G95 ramps feed inside the cut
+and does not preserve thread phase, so endpoint surface finish needs operator
+assessment. No remote motion commands were issued.
+
 ## Hardware acceptance still required
 
 - [ ] Inspect external STEP/DIR pulse widths, jitter, skew and setup/hold at the connector.

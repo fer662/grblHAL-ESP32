@@ -91,7 +91,7 @@ def screenshot():
         args.screen.write_bytes(b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0))+chunk(b'IDAT', zlib.compress(raw))+chunk(b'IEND', b''))
 
 
-def validate_cycle(lines, before, passes, starts, pitch, rpm, forward, length):
+def validate_cycle(lines, before, passes, starts, pitch, rpm, forward, length, threading):
     plan = fields(next(line for line in lines if line.startswith('[H5PLAN:')))
     lead, lead_in = float(plan['H5PLAN'].split(':', 1)[1]), float(plan['LEAD_IN'])
     assert abs(lead-abs(pitch)*starts) < 1e-6
@@ -99,10 +99,18 @@ def validate_cycle(lines, before, passes, starts, pitch, rpm, forward, length):
     z_start, z_end = (0, length) if direction > 0 else (length, 0)
     x_start, x_end = (0, .1) if forward else (.1, 0)
     assert abs(float(plan['APPROACH'])-(z_start-direction*lead_in)) < 1e-6
-    assert (float(plan['FINISH'])-z_end)*direction > 0
+    if threading:
+        assert (float(plan['FINISH'])-z_end)*direction > 0
+    else:
+        assert lead_in == 0 and float(plan['RUN_OUT']) == 0
+        assert abs(float(plan['FINISH'])-z_end) < 1e-6
     done = [fields(line) for line in lines if line.startswith('[H5DONE:')]
     expected = ['Setup', 'Retract', 'Approach', 'Take up'] + ['Infeed', 'Register', 'Spindle', 'Cut', 'Retract', 'Return', 'Take up']*(passes*starts) + ['Return to start', 'Finish infeed', 'Restore phase', 'Finish']
     assert [item['STAGE'] for item in done] == expected, [item['STAGE'] for item in done]
+    if not threading:
+        for item in done:
+            if item['STAGE'] in ('Approach', 'Take up', 'Cut', 'Return', 'Return to start'):
+                assert -.002501 <= float(item['Z']) <= length+.002501, item
     cuts = [item for item in done if item['STAGE'] == 'Cut']
     for i, cut in enumerate(cuts):
         assert int(cut['H5DONE'].split(':')[-1]) == i//starts+1
@@ -110,7 +118,7 @@ def validate_cycle(lines, before, passes, starts, pitch, rpm, forward, length):
         assert abs(float(cut['X'])-(x_start+(x_end-x_start)*(i//starts+1)/passes)) <= .5/1200+1e-6
         assert abs(float(cut['Z'])-float(plan['FINISH'])) <= .002501
     syncs = [i for i, line in enumerate(lines) if line.startswith('[P4SYNC:')]
-    assert len(syncs) == passes*starts
+    assert len(syncs) == (passes*starts if threading else 0)
     peaks = []
     for i, index in enumerate(syncs):
         sync = fields(lines[index])
@@ -143,7 +151,8 @@ def validate_cycle(lines, before, passes, starts, pitch, rpm, forward, length):
         assert int(after[axis].split(',')[0])-int(before[axis].split(',')[0]) == travel, (axis, travel, before, after)
     assert abs(float(done[-1]['X'])-x_start) < .001
     assert abs(float(done[-1]['Z'])-z_start) < .005
-    print(f'PASS CYCLE: {passes} passes x {starts} starts, pitch={pitch}, RPM={rpm}, aux={forward}, peak phase={max(peaks):.6f}mm; exact stage order and pulse totals', flush=True)
+    detail = f'peak phase={max(peaks):.6f}mm' if threading else 'bounded G95 turning'
+    print(f'PASS CYCLE: {passes} passes x {starts} starts, pitch={pitch}, RPM={rpm}, aux={forward}, {detail}; exact stage order and pulse totals', flush=True)
 
 
 def cycle(passes, starts, pitch, rpm=300, forward=True, length=6, ui=False, collision=False, threading=True):
@@ -170,7 +179,7 @@ def cycle(passes, starts, pitch, rpm=300, forward=True, length=6, ui=False, coll
     if collision:
         assert lines.count('error:8') == 2
         assert any(line.startswith('$110=60') for line in command('$$'))
-    validate_cycle(lines, before, passes, starts if threading else 1, pitch, rpm, forward, length)
+    validate_cycle(lines, before, passes, starts if threading else 1, pitch, rpm, forward, length, threading)
 
 
 def cancelled(stage, via_ui):

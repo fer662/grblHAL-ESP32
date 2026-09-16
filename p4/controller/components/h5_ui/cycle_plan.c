@@ -46,7 +46,9 @@ bool h5_cycle_plan(const h5_cycle_config_t *c, const h5_cycle_machine_t *m, h5_c
     bool face = p->config.operation == H5_FACE, cut = p->config.operation == H5_CUT;
     p->cut_axis = face || cut ? 'X' : 'Z';
     p->depth_axis = face || cut ? 'Z' : 'X';
-    p->indexed = p->config.operation == H5_TURN || p->config.operation == H5_THREAD;
+    // Only threading needs phase registration and travel outside the cut for
+    // synchronization. Ordinary turning uses bounded G95 feed like facing.
+    p->indexed = p->config.operation == H5_THREAD;
     double rate = face || cut ? m->x_max_rate : m->z_max_rate;
     double steps = face || cut ? m->x_steps_mm : m->z_steps_mm;
     double acceleration = face || cut ? m->x_acceleration : m->z_acceleration;
@@ -72,7 +74,7 @@ bool h5_cycle_plan(const h5_cycle_config_t *c, const h5_cycle_machine_t *m, h5_c
     }
     p->approach = p->cut_start - p->direction * p->lead_in;
     p->finish = p->cut_end + p->direction * p->run_out;
-    p->takeup = p->approach - p->direction / steps;
+    p->takeup = p->approach - (p->indexed ? p->direction / steps : 0);
     if (cut)
         p->depth_start = p->depth_end = p->clearance = m->z;
     if (p->config.operation == H5_ELLIPSE) {

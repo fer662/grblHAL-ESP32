@@ -11,6 +11,7 @@ int main(void)
     h5_cycle_machine_t m={.x=0,.z=0,.rpm=300,.z_acceleration=50,.z_max_rate=960,.z_steps_mm=200};
     h5_cycle_plan_t p; char error[96];
     assert(h5_cycle_plan(&c,&m,&p,error,sizeof(error)));
+    assert(p.indexed);
     CLOSE(p.lead,1); CLOSE(p.lead_in,2.95); CLOSE(p.run_out,1.87);
     CLOSE(p.approach,7.05); CLOSE(p.finish,21.87); CLOSE(p.takeup,7.045);
     CLOSE(p.clearance,-1.5); CLOSE(h5_cycle_depth(&p,0),-.5); CLOSE(h5_cycle_depth(&p,3),1);
@@ -63,5 +64,34 @@ int main(void)
         }
         CLOSE(x,.5);CLOSE(z,10);CLOSE(revolutions,50);
     }
-    puts("PASS: cycle geometry, directions, radial depths, phase registration and invalid envelopes");
+    // Regression: ordinary cuts must not inherit Thread's lead-in, run-out or
+    // one-step approach outside the cutting axis bounds, in either direction.
+    for (unsigned op=H5_TURN; op<=H5_ELLIPSE; op++) {
+        if (op==H5_THREAD) continue;
+        for (int spindle=-1; spindle<=1; spindle+=2)
+        for (int pitch=-1; pitch<=1; pitch+=2)
+        for (unsigned aux=0; aux<2; aux++) {
+            c=(h5_cycle_config_t){.operation=op,.passes=3,.starts=7,.pitch=.1*pitch,.aux_forward=aux,
+                .x_min=0,.x_max=1,.z_min=0,.z_max=10,.rpm_limit=500};
+            if(op==H5_CUT) c.z_min=c.z_max=4;
+            m.rpm=400*spindle; m.z=4;
+            assert(h5_cycle_plan(&c,&m,&p,error,sizeof(error)));
+            assert(!p.indexed && p.starts==1);
+            CLOSE(p.lead,.1); CLOSE(p.lead_in,0); CLOSE(p.run_out,0);
+            CLOSE(p.approach,p.cut_start); CLOSE(p.takeup,p.cut_start); CLOSE(p.finish,p.cut_end);
+            if(op==H5_CUT) { CLOSE(p.clearance,4); CLOSE(p.depth_start,4); CLOSE(p.depth_end,4); }
+            else CLOSE(fabs(p.clearance-p.depth_start),.5); // Preserve tool clearance.
+            if(op==H5_ELLIPSE) for(unsigned pass=0; pass<c.passes; pass++)
+                for(unsigned segment=0; segment<=p.segments; segment++) {
+                    double x,z,feed; h5_cycle_point(&p,pass,segment,&x,&z,&feed);
+                    assert(x>=-1e-9 && x<=1+1e-9 && z>=-1e-9 && z<=10+1e-9);
+                }
+        }
+    }
+    // Even a single-step-long Turn has no programmed travel outside its ends.
+    c=(h5_cycle_config_t){.operation=H5_TURN,.passes=1,.starts=1,.pitch=.1,
+        .x_min=0,.x_max=1,.z_min=0,.z_max=.005,.rpm_limit=500};
+    m.rpm=-400; assert(h5_cycle_plan(&c,&m,&p,error,sizeof(error)));
+    CLOSE(p.approach,.005); CLOSE(p.takeup,.005); CLOSE(p.finish,0);
+    puts("PASS: bounded non-thread profiles, preserved clearance, thread phase and invalid envelopes");
 }

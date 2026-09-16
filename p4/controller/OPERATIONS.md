@@ -2,15 +2,16 @@
 
 The touchscreen keeps the original eight operation tabs and calibrated pitch
 picker. Every move enters the same grblHAL parser, planner and X/Z pulse driver.
-The application is still an enable-locked, disconnected bench build.
+The normal application permits operator axis control; hardware bench suites require
+a separate disconnected, enable-locked build.
 
 | Operation | Implemented motion |
 | --- | --- |
 | Gearbox | Z follows signed spindle pitch between configured bounds. Stops and reversals decelerate and reengage with retained spindle/Z registration. |
 | Cone | Gearbox motion with X/Z slope `-ratio/2 × auxiliary-direction sign`, clipped to both axes' bounds. X is radial. |
 | Async | Z advances at signed configured mm/s using normal acceleration, with manual override and resume. |
-| Turn | Repeated spindle-synchronized Z cuts with linear X depth progression, clearance returns, lead-in and run-out. |
-| Thread | Turn geometry with lead = pitch × starts and phase registration for each start at every depth. |
+| Turn | Repeated G95 feed-per-revolution Z cuts with linear X depth progression and clearance returns. Acceleration and deceleration stay within the entered Z endpoints. |
+| Thread | Indexed G33 Z cuts with lead = pitch × starts, lead-in/run-out and phase registration for each start at every depth. |
 | Face | Repeated X cuts with Z depth progression and clearance; native G95 feed accelerates and decelerates at the specified X endpoints. |
 | Cut | Progressively deeper X plunges, returning to the X start each pass; Z remains fixed. |
 | Ellipse | Scaled quarter-ellipse X/Z paths per depth, retaining the original spindle-progress parameterization and auxiliary direction. Chords feed native lookahead. |
@@ -46,10 +47,12 @@ The last depth is retained. It never jumps out of a cut halfway through.
   counts/revolution; limits remain X 60 and Z 960 mm/min, acceleration 25/50 mm/s².
 - X is radial; operation previews show machine mm, independent of readout zeros,
   units or diameter display. G18 is the supported arc plane; Y and G76 are rejected.
-- Turn/Thread reserve acceleration lead-in and run-out outside the cutting bounds.
+- Thread reserves acceleration lead-in and run-out outside the cutting bounds.
   The preview must fit the actual available travel and clearance before cutting.
-- Face/Cut use feed-per-revolution profiles with acceleration at their endpoints.
-  They are not indexed threading cuts.
+- Turn/Face/Cut use feed-per-revolution profiles with acceleration at their endpoints.
+  They are not indexed threading cuts. As of 0.3.14, all non-thread profiles also
+  omit the one-step approach beyond the cutting-axis bound. The existing 0.5 mm
+  tool-clearance retract on the depth axis is retained; Cut keeps Z fixed.
 - Ellipse uses a 0.002 mm geometric chord tolerance, 8–256 segments per quarter arc.
   Segment feed represents spindle progress rather than constant path feed.
 - Rate checks project the path onto both axes; spindle-synchronization corrections
@@ -61,8 +64,8 @@ The last depth is retained. It never jumps out of a cut halfway through.
 - After manual movement or braking, low-speed feed may show **Waiting for spindle
   phase** until the spindle reaches the retained axis registration (at most one
   revolution). A newly armed feed follows immediately, subject to step resolution.
-  Low-speed position following is assisted feed; indexed Thread/Turn recipes keep
-  their existing 30 RPM minimum and G33 lead-in/phase behavior.
+  Low-speed position following is assisted feed; indexed Thread recipes keep
+  their existing G33 lead-in/phase behavior. Profile cycles retain their 30 RPM minimum.
 - The supported tracking assumption is physically gradual spindle speed change.
   Sudden synthetic stop/reverse tests exercise cancellation; they do not establish
   loaded tracking capability for arbitrary spindle acceleration.
@@ -72,7 +75,7 @@ The last depth is retained. It never jumps out of a cut halfway through.
 
 ## Bench coverage
 
-`verify_cycles.py` checks Turn/Thread phase, geometry and cancellation;
+`verify_cycles.py` checks bounded Turn moves, Thread phase, geometry and cancellation;
 `verify_profiles.py` checks Face/Cut/Ellipse endpoints and queued cancellation;
 `verify_follow.py` checks assisted-feed bounds, phase, stop/reverse and override;
 `verify_hand_follow.py` checks low-speed positions, reversals, bounds and G33 handoff;

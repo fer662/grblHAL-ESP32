@@ -5,6 +5,17 @@ Turn/Thread geometry and records its earlier validation. See [OPERATIONS.md](OPE
 for Face, Cut, Ellipse, Gearbox, Cone, Async, parameter edits and the current
 operating limits. See [PORT_PROGRESS.md](PORT_PROGRESS.md) for final regression status.
 
+## Change in 0.3.14
+
+Turn now uses G95 feed per revolution and stops at the entered Z endpoints.
+Its acceleration/deceleration occur inside that span, without Thread's lead-in,
+run-out or index registration. Face and Cut already used G95. All non-thread
+profiles, including Ellipse, now omit the extra one-step approach beyond the
+cutting-axis bounds. The 0.5 mm depth-axis tool-clearance retract is preserved;
+Cut still keeps Z fixed. Thread's G33 geometry and phase behavior are unchanged.
+The preview distinguishes these behaviors. Earlier Thread/Turn bench records
+below describe the pre-0.3.14 implementation where both used G33.
+
 ## Operator workflow
 
 1. Select Turn or Thread, set signed feed/pitch, depth passes, X and Z machining
@@ -34,7 +45,7 @@ one-step Z backlash approach, return-to-start behavior and multiple-start lead.
 The new service uses grblHAL for every move; no old step/task synchronization
 logic or uncommitted H5 motion experiment is used.
 
-The generated sequence is:
+For Thread, the generated sequence is:
 
 1. Set metric/radial coordinates and the XZ plane.
 2. Retract X to its clearance position before moving Z to the approach.
@@ -55,7 +66,7 @@ one start. X remains radial, including depth and clearance.
 ### Lead-in, phase and run-out
 
 The default preview RPM ceiling is 125% of current measured speed, capped at
-98% of the Z maximum-feed/pitch ratio. It never silently scales thread pitch.
+88% of the Z maximum-feed/pitch ratio. It never silently scales thread pitch.
 The cycle refuses to start if current RPM exceeds that ceiling or is below the
 bench encoder minimum of 30 RPM. During execution, leaving that RPM range or
 changing spindle direction cancels the cycle. Existing encoder stall/reversal
@@ -77,7 +88,9 @@ starts. See [spindle tracking](SPINDLE_TRACKING.md) for the slew assumption and
 scope of the backend measurements.
 
 Machining bounds describe the cutting area. They are **not universal travel
-limits**: clearance, takeup, lead-in and run-out deliberately extend beyond them.
+limits**: Thread takeup, lead-in and run-out deliberately extend beyond them, as
+does the depth-axis tool-clearance retract in profiles that use one. Non-thread
+cutting-axis approach, cutting and return targets remain within their entered bounds.
 The preview exposes those extensions. Preflight limits the full requested span,
 including the current position, to the inherited 100 mm X and 300 mm Z values.
 These span checks are not a homed machine envelope or proof of chuck, shoulder
@@ -149,9 +162,15 @@ Host geometry regression:
 cc -std=c11 -Wall -Wextra -Werror -Icomponents/h5_ui \
   components/h5_ui/cycle_plan.c tests/cycle_plan_test.c -lm -o /tmp/h5-cycle-plan-test
 /tmp/h5-cycle-plan-test
+python3 tests/cycle_commands_test.py
 ```
 
-Device regression:
+The host command test executes the production command emitter with a simulated
+bridge and checks Turn/Face/Cut/Ellipse approach, cut and return targets for both
+spindle/pitch signs, both auxiliary directions and multiple passes. It also checks
+unchanged Thread G33/phase commands. These checks do not measure loaded motion.
+
+Device regression (disconnected, enable-locked bench only):
 
 ```sh
 python verify_cycles.py PORT --screen /private/path/cycle-preview.png

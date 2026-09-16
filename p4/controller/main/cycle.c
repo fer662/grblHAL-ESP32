@@ -152,7 +152,7 @@ static void emit(void)
     case 2:
     case 9:
         snprintf(line, sizeof(line), "G90G94G53G0%c%.6f", plan.cut_axis,
-                 approach - plan.direction / settings.axis[plan.cut_axis == 'X' ? 0 : 2].steps_per_mm);
+                 plan.indexed ? plan.takeup : approach);
         break;
     case 3:
     case 10:

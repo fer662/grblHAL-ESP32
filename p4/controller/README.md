@@ -10,6 +10,12 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
 ## Current scope
 
+**0.3.14 keeps ordinary turning within its entered Z endpoints.** Turn now uses
+G95 feed per revolution with acceleration/deceleration inside the cut; Thread's
+G33 lead-in/run-out is unchanged. Non-thread profiles also omit the shared one-step
+approach outside the cutting-axis bounds. Existing tool-clearance retracts remain.
+See [operation semantics](OPERATIONS.md) and [cycle validation](ASSISTED_CYCLES.md).
+
 **0.3.13 aligns both left-pane columns on 80-pixel rows with 16-pixel gaps.**
 PITCH aligns with the third settings row; START and SHIFT retain their bottom
 alignment with the right pane. See [current touchscreen previews](UI_ROADMAP.md).
