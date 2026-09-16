@@ -1,5 +1,20 @@
 # Touchscreen improvements
 
+## Implemented in 0.3.9
+
+Removed the standalone JOG heading. Z limit targets are now 80 x 128, aligned
+with the 128-pixel height of the adjacent jogs. X limit targets are 128 x 64,
+aligned with their jogs' width. The center mode toggle retains its existing size,
+position and styling.
+
+STEP fills its 220 x 208 upper-left corner, with its label and value centered.
+Future corner controls can use matching slots at local panel coordinates
+(376, 24), (4, 384) and (376, 384), keeping 12-pixel horizontal gaps from the cross.
+Jog speed, Cancel movement and the Limits editor remain proposals.
+
+Current previews: [Thread](docs/ui-039-thread.png),
+[Single step](docs/ui-039-single-step.png), [Gearbox](docs/ui-039-gearbox.png).
+
 ## Implemented in 0.3.8
 
 The right pane now contains a separate central **JOG MODE: HOLD / SINGLE STEP**

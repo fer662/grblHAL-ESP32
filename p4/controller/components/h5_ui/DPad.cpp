@@ -16,11 +16,6 @@ DPad::DPad(lv_obj_t *parent, ButtonDownCallback downCb, ButtonUpCallback upCb,
   lv_obj_set_style_radius(container, 16, 0);
   lv_obj_clear_flag(container, LV_OBJ_FLAG_SCROLLABLE);
 
-  auto title = lv_label_create(container);
-  lv_label_set_text(title, "JOG");
-  lv_obj_set_style_text_font(title, LV_FONT_BIG, 0);
-  lv_obj_align(title, LV_ALIGN_TOP_LEFT, 16, 28);
-
   // Keep H5's physical direction mapping: left is Z+, right is Z-.
   const char *labels[] = {LV_SYMBOL_UP "  X+", "Z-  " LV_SYMBOL_RIGHT,
                          LV_SYMBOL_DOWN "  X-", LV_SYMBOL_LEFT "  Z+"};
@@ -47,11 +42,11 @@ DPad::DPad(lv_obj_t *parent, ButtonDownCallback downCb, ButtonUpCallback upCb,
   }
 
   // Outer limits retain their directional placement around the square jogs.
-  const lv_point_t limitPositions[] = {{224, 24}, {516, 256}, {224, 528}, {4, 256}};
+  const lv_point_t limitPositions[] = {{236, 24}, {516, 244}, {236, 528}, {4, 244}};
   for (unsigned i = 0; i < 4; ++i) {
     endstopButtons[i] = lv_btn_create(container);
     bool vertical = i == BTN_UP || i == BTN_DOWN;
-    lv_obj_set_size(endstopButtons[i], vertical ? 152 : 80, vertical ? 64 : 104);
+    lv_obj_set_size(endstopButtons[i], vertical ? 128 : 80, vertical ? 64 : 128);
     lv_obj_set_pos(endstopButtons[i], limitPositions[i].x, limitPositions[i].y);
     lv_obj_set_style_radius(endstopButtons[i], 8, 0);
     lv_obj_set_style_bg_color(endstopButtons[i], APP_COLOR_BG_TERTIARY, 0);

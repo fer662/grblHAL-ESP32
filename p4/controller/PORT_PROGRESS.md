@@ -339,6 +339,21 @@ OTA installation and real-machine acceptance are pending; no remote motion or
 connected bench test was run. Further corner controls are proposals in
 [UI_ROADMAP.md](UI_ROADMAP.md).
 
+## 0.3.9 jog-panel alignment and corner sizing
+
+Removed the standalone JOG heading. Z limits now share their jog buttons'
+128-pixel height and vertical alignment; X limits share their 128-pixel width and
+horizontal alignment. STEP fills the upper-left 220 x 208 corner with centered
+text. The mode toggle and motion behavior are unchanged. Other corner actions
+remain proposals, with matching space reserved in the layout documentation.
+
+The existing production-LVGL desktop input/layout checks passed, including all
+eight modes, both jog-mode labels and slide-out protection. Gearbox, Thread and
+Single-step previews were regenerated and Thread was visually inspected. The
+IDF 5.5.2 normal build passed. Application SHA-256:
+`38b9a433e12edcd4a599dff4a0c79242a1c37e12ee83e2c6d05300a41717f903`.
+OTA installation remains pending. No remote motor commands were issued.
+
 ## Hardware acceptance still required
 
 - [ ] Inspect external STEP/DIR pulse widths, jitter, skew and setup/hold at the connector.

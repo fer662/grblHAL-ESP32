@@ -555,8 +555,10 @@ void NormalOperationMode::createStepButton() {
   // Create container for step button
   stepButton = lv_btn_create(dpad->getContainer());
 
-  lv_obj_set_size(stepButton, 184, buttonHeight);
-  lv_obj_set_pos(stepButton, 16, 112);
+  // Fill the upper-left corner bounded by the outer limits and jog cross.
+  // The other corner slots have the same 220 x 208 footprint.
+  lv_obj_set_size(stepButton, 220, 208);
+  lv_obj_set_pos(stepButton, 4, 24);
   lv_obj_set_style_radius(stepButton, 5, LV_PART_MAIN);
   lv_obj_set_style_text_color(stepButton, lv_color_hex(0xFFFFFF), 0);
   lv_obj_set_style_pad_all(stepButton, 6, LV_PART_MAIN);
@@ -564,10 +566,10 @@ void NormalOperationMode::createStepButton() {
   lv_obj_set_style_border_color(stepButton, APP_COLOR_BORDER, 0);
 
   lv_obj_t *stepValueLabel = lv_label_create(stepButton);
-  lv_obj_align(stepValueLabel, LV_ALIGN_BOTTOM_MID, 0, 0);
+  lv_obj_align(stepValueLabel, LV_ALIGN_CENTER, 0, 22);
 
   lv_obj_t *stepLabel = lv_label_create(stepButton);
-  lv_obj_align(stepLabel, LV_ALIGN_TOP_MID, 0, 0);
+  lv_obj_align(stepLabel, LV_ALIGN_CENTER, 0, -22);
   lv_label_set_text(stepLabel, "STEP");
 
   LVCallbackWrapper::add(stepButton, LV_EVENT_SHORT_CLICKED,

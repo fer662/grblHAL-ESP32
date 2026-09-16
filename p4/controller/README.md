@@ -10,6 +10,10 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
 ## Current scope
 
+**0.3.9 aligns limit controls with their jog buttons and fills the STEP corner.**
+The redundant JOG heading is removed; the center toggle is preserved. See
+[current touchscreen previews](UI_ROADMAP.md).
+
 **0.3.8 separates Hold and Single-step jogging.** A center toggle selects the
 behavior; STEP has moved into the right pane and controls distance independently.
 Hold cancels on release, while Single step completes one bounded increment without
