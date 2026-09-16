@@ -1,5 +1,31 @@
 # Touchscreen improvements
 
+## Implemented in 0.3.10
+
+The remaining corners now contain **JOG LIMITS ON/OFF** (upper-right) and
+**EDIT LIMITS** (lower-left), matching STEP's 220 x 208 footprint. The lower-right
+corner remains available. The center Hold/Single toggle and all operation controls
+retain their positions. No jog-speed control was added.
+
+- Jog limits OFF bypasses endpoints for ordinary manual jogs, including SHIFT
+  numeric moves. It retains their values and shows OFF in amber and on the endpoint
+  shortcuts. Assisted feed and machining cycles continue using their bounds.
+- Bypass is temporary: power-on restores ON. Changing it requires idle motion,
+  no pending UI movement, and no active assisted operation or firmware update.
+- The full-screen editor shows X-/X+ and Z-/Z+, their spans, and numeric entry,
+  Use current and Clear for each endpoint. Entry uses signed coordinates relative
+  to the current display zero, with the selected mm/in units; X remains slide
+  travel. Existing SHIFT endpoint shortcuts still enter offsets from the current
+  position.
+- Changes remain a draft until Apply. Apply checks that each minimum is below its
+  maximum and changes all endpoints together while stopped. Cancel discards the
+  draft. Clearing either endpoint leaves that direction unbounded. Use current
+  also requires stopped motion and no active assisted operation.
+
+Actual LVGL renders with simulated readings:
+[Thread](docs/ui-0310-thread.png), [Limits bypassed](docs/ui-0310-limits-off.png),
+[Limit editor](docs/ui-0310-limit-editor.png), [Signed keypad](docs/ui-0310-limit-keypad.png).
+
 ## Implemented in 0.3.9
 
 Removed the standalone JOG heading. Z limit targets are now 80 x 128, aligned
@@ -10,7 +36,7 @@ position and styling.
 STEP fills its 220 x 208 upper-left corner, with its label and value centered.
 Future corner controls can use matching slots at local panel coordinates
 (376, 24), (4, 384) and (376, 384), keeping 12-pixel horizontal gaps from the cross.
-Jog speed, Cancel movement and the Limits editor remain proposals.
+These were the reserved corner positions before the 0.3.10 controls above.
 
 Current previews: [Thread](docs/ui-039-thread.png),
 [Single step](docs/ui-039-single-step.png), [Gearbox](docs/ui-039-gearbox.png).
@@ -39,7 +65,7 @@ operation-specific control sets retain their existing positions.
 Desktop previews: [Thread](docs/ui-038-thread.png),
 [Single step](docs/ui-038-single-step.png), [Gearbox](docs/ui-038-gearbox.png).
 
-Suggested remaining corner controls, not implemented:
+Earlier corner proposals (superseded by the 0.3.10 selection above):
 
 1. **Jog speed**: explicit slow/normal choices within each axis's configured rate.
 2. **Limits**: edit the endpoints together, see their span, and clear one axis's
@@ -86,12 +112,12 @@ Desktop renders, with simulated readings:
 
 ## Suggested additions using the existing core
 
-These are proposals, not enabled controls in 0.3.8. They require no new motion
+These are proposals, not enabled controls in 0.3.10. They require no new motion
 planner. Source references describe this checkout, not all upstream configurations.
 
 | Priority | UI addition | Existing support and integration required |
 | --- | --- | --- |
-| 1 | Jog speed selector and direct increment choices | `$J` already accepts a feed and relative distance; replace the current fixed X/Z feed choices and cycling step selector with explicit choices. Clamp to configured axis limits. Native jogs deliberately ignore feed override, so this should set jog feed directly. |
+| Deferred by operator | Jog speed selector and direct increment choices | `$J` already accepts a feed and relative distance; replace the current fixed X/Z feed choices and cycling step selector with explicit choices. Clamp to configured axis limits. Native jogs deliberately ignore feed override, so this should set jog feed directly. |
 | 2 | Clearly labeled X radius/diameter and machine/work position views | The core supports G7/G8 and machine/work coordinates. The current assisted DRO uses physical slide travel plus a local origin; keep this distinct from G-code diameter mode and implement explicit conversion/reporting. |
 | 3 | Work setup: measured diameter, face coordinate, G54–G59 selection | G10 and work coordinate systems already exist. Replace the current display-only zero operation with an explicit work-setup workflow where appropriate; preserve assisted-mode zero behavior until migrated deliberately. Position still needs re-establishing after unobserved manual movement. |
 | 4 | G-code program controls: pause/resume, single block, optional stop | The core supports feed hold/cycle start, single block and optional stop. Add a program owner alongside assisted services. Current assisted-mode hold requests cancel their operation, and G33 disables ordinary feed hold; a generic pause button must reflect these distinctions. |

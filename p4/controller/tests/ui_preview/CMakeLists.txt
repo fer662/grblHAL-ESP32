@@ -17,7 +17,7 @@ add_subdirectory("${LVGL}" lvgl EXCLUDE_FROM_ALL)
 target_compile_definitions(lvgl PUBLIC LV_CONF_PATH=${LV_CONF_PATH})
 add_executable(ui_preview preview.cpp
     ${UI}/AxisControls.cpp ${UI}/CompactTabSelector.cpp ${UI}/DPad.cpp
-    ${UI}/NormalOperationMode.cpp ${UI}/Numpad.cpp ${UI}/PitchPicker.cpp
+    ${UI}/NormalOperationMode.cpp ${UI}/Numpad.cpp ${UI}/PitchPicker.cpp ${UI}/LimitEditor.cpp
     ${UI}/Pitch.cpp ${UI}/SettingsScreen.cpp ${UI}/StateMachine.cpp
     ${UI}/LVCallbackWrapper.cpp ${UI}/display.cpp)
 target_include_directories(ui_preview PRIVATE stubs "${UI}")

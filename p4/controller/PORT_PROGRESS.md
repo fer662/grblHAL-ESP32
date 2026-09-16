@@ -354,6 +354,29 @@ IDF 5.5.2 normal build passed. Application SHA-256:
 `38b9a433e12edcd4a599dff4a0c79242a1c37e12ee83e2c6d05300a41717f903`.
 OTA installation remains pending. No remote motor commands were issued.
 
+## 0.3.10 jog-limit bypass and endpoint editor
+
+Added matching corner controls for JOG LIMITS ON/OFF and EDIT LIMITS. Manual
+jog bypass retains endpoint values, is visibly indicated and resets to ON at
+power-on. Assisted operations retain their existing bounds. The editor supports
+signed display coordinates in mm/in, current-position capture, per-endpoint
+clearing, X/Z spans, draft cancellation and atomic Apply. Changing bypass,
+capturing a position or applying edits requires stopped motion, no pending UI
+move, and no assisted operation or update in progress. No jog-speed control added.
+
+Production-function host checks passed for bypass/re-enable, pending/moving/
+assisted/update guards, endpoint ordering, atomic updates, unit/origin conversion
+and out-of-range rejection. Existing Hold/Single and assisted-feed routing checks
+also passed. The actual LVGL pointer regression passed for all eight modes and
+new toggle/editor interactions, including signed input, Cancel, Clear, Use current
+and refused Apply while busy. Main, bypassed, editor and signed-keypad framebuffer
+previews were visually inspected.
+
+The normal IDF 5.5.2 build passed; 22% of the OTA application partition remains free.
+Application SHA-256:
+`7d56d9555102f066ccb056bace9783efe570cd30c5f55a5e998ab2aee7cb92f1`.
+OTA installation is pending. No connected hardware motion tests were run.
+
 ## Hardware acceptance still required
 
 - [ ] Inspect external STEP/DIR pulse widths, jitter, skew and setup/hold at the connector.

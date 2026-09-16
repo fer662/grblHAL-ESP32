@@ -5,6 +5,7 @@
 #include "CompactTabSelector.h"
 #include "DPad.h"
 #include "Numpad.h"
+#include "LimitEditor.h"
 #include "OperationMode.h"
 #include "PitchPicker.h"
 #include "SettingsScreen.h"
@@ -55,6 +56,9 @@ private:
   lv_obj_t *jogModeButton = nullptr;
   lv_obj_t *jogModeLabel = nullptr;
   bool lastJogContinuous = true;
+  lv_obj_t *jogLimitsButton = nullptr, *jogLimitsLabel = nullptr;
+  bool lastJogLimitsEnabled = true;
+  std::unique_ptr<LimitEditor> limitEditor;
 
   // Pitch selection
   lv_obj_t *pitchContainer = nullptr;
@@ -101,6 +105,7 @@ private:
   void createPitchButtons();
   void createStepButton();
   void createJogModeButton();
+  void createLimitControls();
   void createPassesButton();
   void createThreadingStartsButton();
   void createAuxToggleButton();
@@ -115,6 +120,7 @@ private:
   void updatePitchButtonText(bool force = false);
   void updateStepButton(bool force = false);
   void updateJogModeButton(bool force = false);
+  void updateLimitControls(bool force = false);
   void updatePassesButton(bool force = false);
   void updateThreadingStartsButton(bool force = false);
   void updateAuxToggleButton(bool force = false);

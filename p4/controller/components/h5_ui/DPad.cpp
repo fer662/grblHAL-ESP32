@@ -58,7 +58,7 @@ DPad::DPad(lv_obj_t *parent, ButtonDownCallback downCb, ButtonUpCallback upCb,
     lv_obj_center(endstopLabels[i]);
     lv_obj_add_event_cb(endstopButtons[i], endstop_press_event_cb, LV_EVENT_CLICKED, this);
   }
-  auto hint = lv_label_create(container);
+  auto hint = hintLabel = lv_label_create(container);
   lv_label_set_text(hint, "Limits: tap to set / clear  |  SHIFT: enter value");
   lv_obj_set_style_text_font(hint, &lv_font_montserrat_16, 0);
   lv_obj_set_style_text_color(hint, APP_COLOR_TEXT_SECONDARY, 0);
@@ -70,18 +70,25 @@ void DPad::update() {
   const String values[] = {getAxisLeftStop(&x), getAxisRightStop(&z),
                            getAxisRightStop(&x), getAxisLeftStop(&z)};
   const char *names[] = {"X+ limit", "Z- limit", "X- limit", "Z+ limit"};
+  const char *bypassed[] = {"X+ OFF", "Z- OFF", "X- OFF", "Z+ OFF"};
   for (unsigned i = 0; i < 4; ++i) {
-    if (values[i] != lastEndstopTexts[i]) {
-      String text = String(names[i]) + "\n" + values[i];
+    if (values[i] != lastEndstopTexts[i] || lastLimitsEnabled != jogLimitsEnabled) {
+      String text = String(jogLimitsEnabled ? names[i] : bypassed[i]) + "\n" + values[i];
       lv_label_set_text(endstopLabels[i], text.c_str());
       lastEndstopTexts[i] = values[i];
       bool set = values[i] != "-";
       lv_obj_set_style_border_width(endstopButtons[i], set ? 2 : 0, 0);
-      lv_obj_set_style_border_color(endstopButtons[i], APP_COLOR_WARNING, 0);
+      lv_obj_set_style_border_color(endstopButtons[i], jogLimitsEnabled ? APP_COLOR_WARNING : APP_COLOR_TEXT_DISABLED, 0);
     }
     bool disabled = (i == BTN_UP || i == BTN_DOWN) ? x.disabled : z.disabled;
     if (disabled) lv_obj_add_state(buttons[i], LV_STATE_DISABLED);
     else lv_obj_clear_state(buttons[i], LV_STATE_DISABLED);
+  }
+  if (lastLimitsEnabled != jogLimitsEnabled) {
+    lv_label_set_text(hintLabel, jogLimitsEnabled
+        ? "Limits: tap to set / clear  |  SHIFT: enter value"
+        : "Jog limits OFF  |  Assisted bounds still apply");
+    lastLimitsEnabled = jogLimitsEnabled;
   }
 }
 

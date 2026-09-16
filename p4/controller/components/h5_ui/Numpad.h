@@ -18,7 +18,8 @@ public:
     DPAD_LIMIT_DOWN,
     PASSES_SETTING,
     THREADING_STARTS_SETTING,
-    CONE_RATIO_SETTING
+    CONE_RATIO_SETTING,
+    LIMIT_X_MIN, LIMIT_X_MAX, LIMIT_Z_MIN, LIMIT_Z_MAX
   };
 
   using NumpadCallback = std::function<void(float value, Action action)>;
@@ -26,7 +27,7 @@ public:
   Numpad(lv_obj_t *parent, NumpadCallback callback = nullptr);
   ~Numpad();
 
-  void show(Action action);
+  void show(Action action, const char *prompt = nullptr);
   void hide();
   bool isVisible() const;
 
@@ -50,6 +51,7 @@ private:
   void addDigit(char digit);
   void addDecimalPoint();
   void backspace();
+  void toggleSign();
   void enter();
   void cancel();
 

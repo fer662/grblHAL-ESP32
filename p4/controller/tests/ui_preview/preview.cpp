@@ -10,6 +10,8 @@
 
 int mode=MODE_NORMAL, measure=MEASURE_METRIC, turnPasses=3, starts=2;
 bool isOn=false, auxForward=false, buzzerEnabled=false, jogContinuous=true;
+bool jogLimitsEnabled=true;
+static bool limitsEditable=true;
 long dupr=1000, moveStep=MOVE_STEP_1;
 float coneRatio=.25f;
 PitchType pitchType=PITCH_TYPE_MM_PER_TURN;
@@ -52,6 +54,20 @@ void setRightStop(Axis *a,long v) {a->rightStop=v;}
 bool isPassMode() {return mode==MODE_TURN || mode==MODE_FACE || mode==MODE_CUT || mode==MODE_THREAD || mode==MODE_ELLIPSE;}
 int getApproxRpm() {return 420;}
 static double steps(Axis *a) {return a==&x?1200:200;}
+bool h5_ui_limits_editable() {return limitsEditable;}
+bool h5_ui_set_jog_limits(bool enabled) {if(!limitsEditable)return false;jogLimitsEnabled=enabled;return true;}
+double h5_ui_limit_coordinate(Axis *a,long value) {double mm=((double)value+a->originPos)/steps(a);return measure==MEASURE_METRIC?mm:mm/25.4;}
+bool h5_ui_limit_steps(Axis *a,double value,long *out) {
+    double raw=value*(measure==MEASURE_METRIC?1:25.4)*steps(a)-a->originPos;
+    if(!std::isfinite(raw)||raw<=INT32_MIN||raw>=INT32_MAX)return false;
+    *out=lround(raw);return true;
+}
+const char *h5_ui_apply_limits(const long v[4]) {
+    if(!limitsEditable)return "Stop motion and assisted operations before applying limits.";
+    if(v[0]!=LONG_MIN&&v[1]!=LONG_MAX&&v[0]>=v[1])return "X- must be less than X+. Clear an endpoint to leave it unset.";
+    if(v[2]!=LONG_MIN&&v[3]!=LONG_MAX&&v[2]>=v[3])return "Z- must be less than Z+. Clear an endpoint to leave it unset.";
+    x.rightStop=v[0];x.leftStop=v[1];z.rightStop=v[2];z.leftStop=v[3];return nullptr;
+}
 String getAxisPos(Axis *a) {return format_decimal((a->pos+a->originPos)/steps(a),3);}
 String getAxisLeftStop(Axis *a) {return a->leftStop==LONG_MAX?"-":format_decimal((a->leftStop+a->originPos)/steps(a),3);}
 String getAxisRightStop(Axis *a) {return a->rightStop==LONG_MIN?"-":format_decimal((a->rightStop+a->originPos)/steps(a),3);}
@@ -72,6 +88,17 @@ static lv_point_t center(const char *text) {
     return {(lv_coord_t)((a.x1+a.x2)/2),(lv_coord_t)((a.y1+a.y2)/2)};
 }
 static void click(const char *text) {auto p=center(text);touch(p.x,p.y,true);touch(p.x,p.y,false);}
+static void row_click(const char *name,unsigned action) {
+    auto label=find(lv_scr_act(),name);assert(label);
+    auto button=lv_obj_get_child(lv_obj_get_parent(label),action);lv_area_t a;
+    lv_obj_get_coords(button,&a);int x=(a.x1+a.x2)/2,y=(a.y1+a.y2)/2;
+    touch(x,y,true);touch(x,y,false);
+}
+static void coordinate(const char *name,const char *number) {
+    row_click(name,1);
+    for(const char *c=number;*c;c++) {char s[]={*c,0};click(*c=='-'?"+/-":s);}
+    click("Enter");
+}
 static void collect_buttons(lv_obj_t *o,std::vector<lv_area_t>& areas) {
     if(!lv_obj_is_visible(o))return;
     if(lv_obj_check_type(o,&lv_btn_class)) {
@@ -138,6 +165,27 @@ int main() {
     render("keypad.ppm");click("Cancel");
     click("X+ limit\n0.000");click("1");click(".");click("2");click("5");click("Enter");
     assert(x.leftStop==1500);for(auto j:jogs)assert(!j.pressed);
+    // Toggle preserves all saved endpoints and refuses a change while busy.
+    limitsEditable=false;click("JOG LIMITS\n\nON");assert(jogLimitsEnabled);
+    limitsEditable=true;click("JOG LIMITS\n\nON");assert(!jogLimitsEnabled&&x.leftStop==1500);
+    screens.updateDisplay();assert(find(lv_scr_act(),"X+ OFF\n1.250"));render("limits-off.ppm");
+    click("JOG LIMITS\n\nOFF");assert(jogLimitsEnabled);
+    // Cancel discards clears. Input uses signed display coordinates and zero offsets.
+    click("EDIT\nLIMITS");row_click("X+",3);assert(x.leftStop==1500);click("Cancel");assert(x.leftStop==1500);
+    x.originPos=-1200;z.originPos=200;
+    click("EDIT\nLIMITS");row_click("X-",1);click("+/-");click("2");
+    render("limit-keypad.ppm");click("Enter");
+    coordinate("X+","3");coordinate("Z-","-10");row_click("Z+",2);
+    assert(x.leftStop==1500&&x.rightStop==LONG_MIN&&z.rightStop==LONG_MIN);
+    assert(find(lv_scr_act(),"X span\n5.000 mm")&&find(lv_scr_act(),"Z span\n11.000 mm"));
+    render("limit-editor.ppm");
+    limitsEditable=false;click("Apply");assert(find(lv_scr_act(),"Machining limits")&&x.leftStop==1500);
+    limitsEditable=true;click("Apply");assert(x.rightStop==-1200&&x.leftStop==4800&&z.rightStop==-2200&&z.leftStop==0);
+    click("EDIT\nLIMITS");coordinate("X+","-3");click("Apply");assert(find(lv_scr_act(),"Machining limits")&&x.leftStop==4800);click("Cancel");
+    measure=MEASURE_INCH;click("EDIT\nLIMITS");coordinate("Z-","-1");click("Apply");assert(z.rightStop==-5280);
+    measure=MEASURE_METRIC;click("EDIT\nLIMITS");for(auto axis:{"X-","X+","Z-","Z+"})row_click(axis,3);click("Apply");
+    assert(x.rightStop==LONG_MIN&&x.leftStop==LONG_MAX&&z.rightStop==LONG_MIN&&z.leftStop==LONG_MAX);
+    x.originPos=z.originPos=0;
     click("Thread");click("Settings");render("settings.ppm");click("CLOSE");
     click("PITCH");render("pitches.ppm");
     puts("PASS: four jog directions, release, slide-out cancellation, limit separation, disabled axes, all eight mode selectors");

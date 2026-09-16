@@ -18,14 +18,17 @@ harness = r'''
 #include <vector>
 #include "preferences.h"
 using String = std::string;
-struct Axis {char name; long motorSteps, screwPitch, pos=0, leftStop=LONG_MAX, rightStop=LONG_MIN; bool disabled=false;};
+struct Axis {char name; long motorSteps, screwPitch, pos=0, leftStop=LONG_MAX, rightStop=LONG_MIN, originPos=0; bool disabled=false;};
 Axis x={'X',1200,10000}, z={'Z',400,20000};
-struct Status {bool ready=true, moving=false, held=false; int alarm=0; uint32_t command_id=0,completed_id=0,sampled_completed_id=0;float steps_per_mm[3]={1200,0,200};};
+struct Status {bool ready=true, moving=false, held=false; int alarm=0; uint32_t command_id=0,completed_id=0,sampled_completed_id=0;float steps_per_mm[3]={1200,0,200};long position[3]={0,0,0};};
 static Status status, published;
 static String notice;
 static uint32_t last_command, single_jog_id;
 static Axis *held_axis;
 static bool continuous_jog, jogContinuous=true;
+static bool jogLimitsEnabled=true, updating;
+static constexpr int MEASURE_METRIC=0;
+static int measure=MEASURE_METRIC;
 static long moveStep=10000;
 static constexpr float MAX_TRAVEL_MM_X=100, MAX_TRAVEL_MM_Z=300;
 static bool follow, axis_pending, accept=true;
@@ -40,12 +43,14 @@ static void h5_bridge_cancel() {cancels++;}
 static bool h5_cycle_busy() {return follow;}
 static bool h5_follow_busy() {return follow;}
 static bool h5_axis_change_pending() {return axis_pending;}
+static bool h5_update_active() {return updating;}
 static bool h5_follow_jog(char a,int s,double d,bool held) {if(!accept)return false;manual.push_back({a,s,d,held});return true;}
 static void h5_follow_release() {releases++;}
 FUNCTIONS
 static void reset() {
  status=published=Status{};notice.clear();last_command=single_jog_id=next_id=0;
  held_axis=nullptr;continuous_jog=false;jogContinuous=true;moveStep=10000;
+ jogLimitsEnabled=true;updating=false;measure=MEASURE_METRIC;x.originPos=z.originPos=0;
  follow=axis_pending=false;accept=true;cancels=releases=0;submitted.clear();manual.clear();
  x.pos=z.pos=0;x.leftStop=z.leftStop=LONG_MAX;x.rightStop=z.rightStop=LONG_MIN;x.disabled=z.disabled=false;
 }
@@ -96,6 +101,24 @@ int main() {
  Legacy old{};old.version=1;old.pitch=15000;old.move_step=1000;old.reserved[0]=0;
  h5_preferences_t p{};memcpy(&p,&old,sizeof(p));assert(p.jog_mode==0 && p.pitch==15000 && p.move_step==1000);
  p.jog_mode=1;memcpy(&old,&p,sizeof(old));assert(old.reserved[0]==1 && old.pitch==15000);
+ // Manual bypass retains endpoints; assisted requests use their own bounded path.
+ reset();x.leftStop=600;x.rightStop=-600;
+ assert(h5_ui_set_jog_limits(false));assert(x.leftStop==600&&x.rightStop==-600);
+ jogContinuous=false;h5_ui_jog(&x,1,true);assert(distance()==1);h5_ui_jog(&x,1,false);
+ assert(!h5_ui_set_jog_limits(true)); // Unacknowledged request.
+ published.sampled_completed_id=1;published.moving=true;assert(!h5_ui_set_jog_limits(true));
+ published.moving=false;assert(h5_ui_set_jog_limits(true));assert(distance_to_stop(&x,1,1)==.5);
+ follow=true;assert(!h5_ui_set_jog_limits(false));follow=false;
+ updating=true;assert(!h5_ui_set_jog_limits(false));updating=false;
+ // Atomic apply, ordering, clearing, units, origin offsets and numeric range checks.
+ reset();long bounds[]={-1200,2400,-6000,0};assert(!h5_ui_apply_limits(bounds));
+ assert(x.rightStop==-1200&&x.leftStop==2400&&z.rightStop==-6000&&z.leftStop==0&&submitted.empty());
+ long invalid[]={3600,2400,-6000,200};assert(h5_ui_apply_limits(invalid));assert(x.rightStop==-1200&&z.leftStop==0);
+ published.moving=true;assert(h5_ui_apply_limits(bounds));published.moving=false;
+ bounds[0]=LONG_MIN;bounds[1]=LONG_MAX;assert(!h5_ui_apply_limits(bounds));assert(x.rightStop==LONG_MIN&&x.leftStop==LONG_MAX);
+ long raw=0;x.originPos=-1200;assert(h5_ui_limit_steps(&x,-2,&raw)&&raw==-1200);assert(h5_ui_limit_coordinate(&x,raw)==-2);
+ measure=1;z.originPos=200;assert(h5_ui_limit_steps(&z,-1,&raw)&&raw==-5280);assert(fabs(h5_ui_limit_coordinate(&z,raw)+1)<1e-9);
+ assert(!h5_ui_limit_steps(&x,INFINITY,&raw)&&!h5_ui_limit_steps(&x,NAN,&raw)&&!h5_ui_limit_steps(&x,1e20,&raw));
 }
 '''.replace('FUNCTIONS', functions)
 with tempfile.TemporaryDirectory() as directory:

@@ -139,6 +139,13 @@ void Numpad::createUI(lv_obj_t *parent) {
     buttons[i] = lv_btn_create(container);
     lv_obj_add_flag(buttons[i], LV_OBJ_FLAG_HIDDEN);
   }
+  // Signed absolute coordinates are only available to the limit editor.
+  lv_obj_set_size(buttons[14], buttonWidth, 80);
+  lv_obj_set_pos(buttons[14], startX, 636);
+  lv_obj_t *signLabel = lv_label_create(buttons[14]);
+  lv_label_set_text(signLabel, "+/-");
+  lv_obj_center(signLabel);
+  lv_obj_add_event_cb(buttons[14], button_event_cb, LV_EVENT_SHORT_CLICKED, this);
 
   // Create dummy enter and cancel buttons for compatibility (hidden)
   enterButton = lv_btn_create(container);
@@ -152,10 +159,13 @@ void Numpad::createUI(lv_obj_t *parent) {
                       this);
 }
 
-void Numpad::show(Action action) {
+void Numpad::show(Action action, const char *prompt) {
   currentAction = action;
+  if (action >= LIMIT_X_MIN && action <= LIMIT_Z_MAX) lv_obj_clear_flag(buttons[14], LV_OBJ_FLAG_HIDDEN);
+  else lv_obj_add_flag(buttons[14], LV_OBJ_FLAG_HIDDEN);
   currentValue = "";
   updatePrompt();
+  if (prompt) lv_label_set_text(promptLabel, prompt);
   updateDisplay();
   lv_obj_clear_flag(container, LV_OBJ_FLAG_HIDDEN);
   lv_obj_move_foreground(container);
@@ -185,6 +195,8 @@ void Numpad::addDigit(char digit) {
   if (currentValue.length() < 10) { // Limit input length
     if (currentValue == "0") {
       currentValue = digit;
+    } else if (currentValue == "-0") {
+      currentValue = std::string("-") + digit;
     } else {
       currentValue += digit;
     }
@@ -209,6 +221,13 @@ void Numpad::backspace() {
     currentValue.pop_back();
     updateDisplay();
   }
+}
+
+void Numpad::toggleSign() {
+  if (currentAction < LIMIT_X_MIN || currentAction > LIMIT_Z_MAX) return;
+  if (!currentValue.empty() && currentValue[0] == '-') currentValue.erase(0, 1);
+  else currentValue = "-" + (currentValue.empty() ? "0" : currentValue);
+  updateDisplay();
 }
 
 void Numpad::enter() {
@@ -249,12 +268,14 @@ void Numpad::button_event_cb(lv_event_t *e) {
         self->enter();
       } else if (i == 13) { // Cancel (right side, spans 2 rows)
         self->cancel();
+      } else if (i == 14) {
+        self->toggleSign();
       }
 
       // Add buzzer feedback for all button presses
       Buzzer::getInstance().beepSuccess();
 
-      // i == 14 and i == 15 are unused buttons, do nothing
+      // i == 15 remains unused.
       break;
     }
   }
@@ -294,6 +315,10 @@ std::string Numpad::getPromptText(Action action) const {
     return "NUMBER OF THREADING STARTS?";
   case CONE_RATIO_SETTING:
     return "CONE RATIO?";
+  case LIMIT_X_MIN: return "X- ENDPOINT (DISPLAY COORDINATE)";
+  case LIMIT_X_MAX: return "X+ ENDPOINT (DISPLAY COORDINATE)";
+  case LIMIT_Z_MIN: return "Z- ENDPOINT (DISPLAY COORDINATE)";
+  case LIMIT_Z_MAX: return "Z+ ENDPOINT (DISPLAY COORDINATE)";
   default:
     return "VALUE?";
   }

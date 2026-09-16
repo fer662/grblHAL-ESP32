@@ -10,6 +10,12 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
 ## Current scope
 
+**0.3.10 adds JOG LIMITS ON/OFF and EDIT LIMITS in the right pane.** Manual
+jogging can bypass the saved endpoints without clearing them; assisted operations
+retain their bounds. The editor supports signed display coordinates, Use current,
+Clear and X/Z spans, with Apply/Cancel. Bypass resets to ON at power-on.
+See [controls and previews](UI_ROADMAP.md).
+
 **0.3.9 aligns limit controls with their jog buttons and fills the STEP corner.**
 The redundant JOG heading is removed; the center toggle is preserved. See
 [current touchscreen previews](UI_ROADMAP.md).

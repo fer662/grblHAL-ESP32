@@ -48,6 +48,7 @@ void NormalOperationMode::initialize() {
                                     [this](float value, Numpad::Action action) {
                                       this->handleNumpadCallback(value, action);
                                     });
+  limitEditor = std::make_unique<LimitEditor>(mainScreen);
 
   // Create pitch picker
   pitchPicker = std::make_unique<PitchPicker>();
@@ -87,6 +88,7 @@ void NormalOperationMode::updateDisplay() {
   updatePitchButtonText();
   updateStepButton();
   updateJogModeButton();
+  updateLimitControls();
   updateConeRatioButton();
   updateAuxToggleButton();
   updateThreadingStartsButton();
@@ -184,6 +186,7 @@ void NormalOperationMode::createMainScreen() {
   // Create step button
   createStepButton();
   createJogModeButton();
+  createLimitControls();
 
   createConeRatioButton();
 
@@ -630,6 +633,41 @@ void NormalOperationMode::createDPad() {
   lv_obj_move_foreground(dpad->getContainer());
 }
 
+void NormalOperationMode::createLimitControls() {
+  jogLimitsButton = lv_btn_create(dpad->getContainer());
+  lv_obj_set_size(jogLimitsButton, 220, 208);
+  lv_obj_set_pos(jogLimitsButton, 376, 24);
+  lv_obj_set_style_radius(jogLimitsButton, 5, 0);
+  jogLimitsLabel = lv_label_create(jogLimitsButton);
+  lv_obj_set_style_text_align(jogLimitsLabel, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_center(jogLimitsLabel);
+  LVCallbackWrapper::add(jogLimitsButton, LV_EVENT_CLICKED, [this](lv_event_t *) {
+    if (h5_ui_set_jog_limits(!jogLimitsEnabled)) {
+      updateLimitControls(); dpad->update(); Buzzer::getInstance().beepSuccess();
+    }
+  });
+  auto edit = lv_btn_create(dpad->getContainer());
+  lv_obj_set_size(edit, 220, 208);
+  lv_obj_set_pos(edit, 4, 384);
+  lv_obj_set_style_radius(edit, 5, 0);
+  lv_obj_set_style_bg_color(edit, APP_COLOR_INFO, 0);
+  auto label = lv_label_create(edit);
+  lv_label_set_text(label, "EDIT\nLIMITS");
+  lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_center(label);
+  LVCallbackWrapper::add(edit, LV_EVENT_CLICKED, [this](lv_event_t *) { limitEditor->show(); });
+  updateLimitControls(true);
+}
+
+void NormalOperationMode::updateLimitControls(bool force) {
+  if (force || lastJogLimitsEnabled != jogLimitsEnabled) {
+    lv_label_set_text(jogLimitsLabel, jogLimitsEnabled ? "JOG LIMITS\n\nON" : "JOG LIMITS\n\nOFF");
+    lv_obj_set_style_bg_color(jogLimitsButton, jogLimitsEnabled ? APP_COLOR_INFO : APP_COLOR_WARNING, 0);
+    lv_obj_set_style_text_color(jogLimitsButton, jogLimitsEnabled ? lv_color_white() : lv_color_black(), 0);
+    lastJogLimitsEnabled = jogLimitsEnabled;
+  }
+}
+
 void NormalOperationMode::dpadButtonDownCallback(DPad::Direction id,
                                                  void *userData) {
   NormalOperationMode *self = static_cast<NormalOperationMode *>(userData);
@@ -750,6 +788,12 @@ void NormalOperationMode::handleNumpadCallback(float value,
   Buzzer::getInstance().beepSuccess();
 
   switch (action) {
+  case Numpad::LIMIT_X_MIN:
+  case Numpad::LIMIT_X_MAX:
+  case Numpad::LIMIT_Z_MIN:
+  case Numpad::LIMIT_Z_MAX:
+    // Absolute endpoints belong to the limit editor's separate keypad.
+    return;
   case Numpad::DPAD_LIMIT_LEFT: {
     long pos = z.pos + convertMmToDupr(value) / z.screwPitch * z.motorSteps;
     setLeftStop(&z, pos);
@@ -1092,6 +1136,7 @@ void NormalOperationMode::updateStartStopButton(bool force) {
 void NormalOperationMode::cleanup() {
   // Clean up RPM PWM callback
   display.rpmPwmCallback = nullptr;
+  limitEditor.reset();
 
   // Smart pointers (tabSelector and pitchPicker) are automatically cleaned
   // up when this object is destroyed, so no manual cleanup needed

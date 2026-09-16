@@ -22,6 +22,7 @@
 
 int mode = MODE_NORMAL, measure = MEASURE_METRIC, turnPasses = 1, starts = 1;
 bool isOn = false, auxForward = false, buzzerEnabled = true, jogContinuous = true;
+bool jogLimitsEnabled = true; // Bypass is temporary; power-on restores jog limits.
 long dupr = 1000, moveStep = MOVE_STEP_1;
 float coneRatio = 1.0f;
 PitchType pitchType = PITCH_TYPE_MM_PER_TURN;
@@ -58,11 +59,57 @@ static float steps_mm(const Axis *a)
 }
 static float distance_to_stop(Axis *a, int sign, float requested)
 {
+    if (!jogLimitsEnabled) return requested;
     if (sign > 0 && a->leftStop != LONG_MAX)
         requested = fminf(requested, fmaxf(0, (a->leftStop - a->pos) / steps_mm(a)));
     if (sign < 0 && a->rightStop != LONG_MIN)
         requested = fminf(requested, fmaxf(0, (a->pos - a->rightStop) / steps_mm(a)));
     return requested;
+}
+bool h5_ui_limits_editable()
+{
+    h5_bridge_snapshot(&status);
+    x.pos = status.position[0]; z.pos = status.position[2];
+    return status.ready && !status.alarm && !status.moving && !status.held &&
+           !held_axis && !h5_cycle_busy() && !h5_axis_change_pending() &&
+           !h5_update_active() && status.sampled_completed_id >= last_command;
+}
+bool h5_ui_set_jog_limits(bool enabled)
+{
+    if (!h5_ui_limits_editable()) {
+        notice = "Stop motion and assisted operations before changing jog limits";
+        return false;
+    }
+    jogLimitsEnabled = enabled;
+    notice = enabled ? "Jog limits enabled" : "Jog limits bypassed; assisted bounds retained";
+    return true;
+}
+double h5_ui_limit_coordinate(Axis *a, long steps)
+{
+    double mm = ((double)steps + a->originPos) / steps_mm(a);
+    return measure == MEASURE_METRIC ? mm : mm / 25.4;
+}
+bool h5_ui_limit_steps(Axis *a, double coordinate, long *steps)
+{
+    double raw = coordinate * (measure == MEASURE_METRIC ? 1.0 : 25.4) * steps_mm(a) - a->originPos;
+    if (!std::isfinite(raw) || raw <= INT32_MIN || raw >= INT32_MAX) return false;
+    double rounded = round(raw);
+    if (rounded <= INT32_MIN || rounded >= INT32_MAX) return false;
+    *steps = (long)rounded;
+    return true;
+}
+const char *h5_ui_apply_limits(const long limits[4])
+{
+    if (!h5_ui_limits_editable()) return "Stop motion and assisted operations before applying limits.";
+    if (limits[0] != LONG_MIN && limits[1] != LONG_MAX && limits[0] >= limits[1])
+        return "X- must be less than X+. Clear an endpoint to leave it unset.";
+    if (limits[2] != LONG_MIN && limits[3] != LONG_MAX && limits[2] >= limits[3])
+        return "Z- must be less than Z+. Clear an endpoint to leave it unset.";
+    // UI-owned coordinates change together only after all validation passes.
+    x.rightStop = limits[0]; x.leftStop = limits[1];
+    z.rightStop = limits[2]; z.leftStop = limits[3];
+    notice = "Machining limits updated";
+    return nullptr;
 }
 static void jog(Axis *a, int sign, float distance, float feed)
 {
@@ -76,6 +123,7 @@ static void jog(Axis *a, int sign, float distance, float feed)
 }
 static void cancel_ui_motion()
 {
+    last_command = 0;
     single_jog_id = 0;
     held_axis = nullptr;
     h5_bridge_cancel();
@@ -122,6 +170,7 @@ void markAxis0(Axis *a)
 }
 void setAxisDisabled(Axis *a, bool disabled)
 {
+    last_command = 0;
     single_jog_id = 0;
     held_axis = nullptr;
     h5_axis_set_disabled(a->name, disabled);
@@ -255,6 +304,7 @@ void h5_ui_sync()
     prefs.aux_forward=auxForward;prefs.sound=buzzerEnabled;prefs.jog_mode=jogContinuous?0:1;h5_preferences_set(&prefs);
     h5_bridge_snapshot(&status);
     if (status.stream_generation != last_generation) {
+        last_command = 0;
         single_jog_id = 0;
         if (!h5_follow_manual_held()) held_axis = nullptr;
         Buzzer::getInstance().endContinuousBeep();
