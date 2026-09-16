@@ -55,35 +55,35 @@ int main() {
     assert(h5_cycle_plan(&c,&m,&plan,error,sizeof error));
     format_cycle_preview(plan,text,sizeof text);
     assert(strstr(text,"Sync/run-up: X clear; Z 0.005 to 0.020 mm"));
-    assert(strstr(text,"Full-depth thread: Z 2.420 to 7.585 mm | length 5.165 mm"));
+    assert(strstr(text,"Full-depth thread: Z 1.320 to 8.685 mm | length 7.365 mm"));
     assert(strstr(text,"X depth: first 1.100, final 2.000 mm | X clear: 0.500 mm"));
     assert(!strstr(text,"(est.)") && !strstr(text,"Usable thread"));
     measure=1;format_cycle_preview(plan,text,sizeof text);
     assert(strstr(text,"Sync/run-up: X clear; Z 0.00020 to 0.00079 in"));
-    assert(strstr(text,"Full-depth thread: Z 0.09528 to 0.29862 in | length 0.20335 in"));
+    assert(strstr(text,"Full-depth thread: Z 0.05197 to 0.34193 in | length 0.28996 in"));
     measure=MEASURE_METRIC;work_offset[0]=0;work_offset[2]=0;
     c.passes=5;c.pitch=.5;c.z_min=0;c.z_max=10;c.rpm_limit=125;
     m.rpm=100;m.z_acceleration=100;
     assert(h5_cycle_plan(&c,&m,&plan,error,sizeof error));
     format_cycle_preview(plan,text,sizeof text);
-    assert(strstr(text,"X infeed while Z moves: 0.020 to 3.020 mm"));
-    assert(strstr(text,"Full-depth thread: Z 3.020 to 6.985 mm | length 3.965 mm"));
-    assert(strstr(text,"X withdrawal: Z 6.985 to 9.985 mm | Z stop: 10.000 mm"));
+    assert(strstr(text,"Final-pass X infeed: Z 0.020 to 1.665 mm"));
+    assert(strstr(text,"Full-depth thread: Z 1.665 to 8.340 mm | length 6.675 mm"));
+    assert(strstr(text,"Final-pass withdrawal: Z 8.340 to 9.985 mm | Z stop: 10.000 mm"));
     assert(strstr(text,"X depth: first 0.200, final 1.000 mm | X clear: -0.500 mm"));
     c.pitch=-.5;assert(h5_cycle_plan(&c,&m,&plan,error,sizeof error));
     format_cycle_preview(plan,text,sizeof text);
-    assert(strstr(text,"Full-depth thread: Z 6.980 to 3.015 mm | length 3.965 mm"));
+    assert(strstr(text,"Full-depth thread: Z 8.335 to 1.660 mm | length 6.675 mm"));
     assert(strstr(text,"does not resume mid-pass.")); // Entire footer fits the buffer.
     c.pitch=.5;c.rpm_limit=564;m.rpm=451;m.x_max_rate=300;
     assert(h5_cycle_plan(&c,&m,&plan,error,sizeof error));
     format_cycle_preview(plan,text,sizeof text);
-    assert(strstr(text,"Full-depth thread: Z 2.945 to 7.060 mm | length 4.115 mm"));
-    assert(strstr(text,"X withdrawal: Z 7.060 to 9.880 mm | Z stop: 10.000 mm"));
+    assert(strstr(text,"Full-depth thread: Z 2.480 to 7.525 mm | length 5.045 mm"));
+    assert(strstr(text,"Final-pass withdrawal: Z 7.525 to 9.880 mm | Z stop: 10.000 mm"));
     m.x_max_rate=300;m.x_acceleration=500;
     assert(h5_cycle_plan(&c,&m,&plan,error,sizeof error));
     format_cycle_preview(plan,text,sizeof text);
-    assert(strstr(text,"Full-depth thread: Z 2.825 to 7.180 mm | length 4.355 mm"));
-    assert(strstr(text,"X withdrawal: Z 7.180 to 9.880 mm | Z stop: 10.000 mm"));
+    assert(strstr(text,"Full-depth thread: Z 1.610 to 8.395 mm | length 6.785 mm"));
+    assert(strstr(text,"Final-pass withdrawal: Z 8.395 to 9.880 mm | Z stop: 10.000 mm"));
     puts("PASS: preview zeros, axis selection, metric/inch positions and lengths; geometry unchanged");
 }
 '''.replace('FORMATTER', formatter)

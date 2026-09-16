@@ -6,6 +6,24 @@ Earlier acceptance used a disconnected Waveshare P4 with enables locked. The
 0.3.3 main build enables normal axis controls for the operator-requested first
 unloaded Z test; installation status and remaining checks are recorded below.
 
+## 0.3.21 Thread transition timing (built; not installed)
+
+Replaced quintic easing with per-pass acceleration/cruise/deceleration. The
+21-block path preserves phase and bounds, checks rounded X chord rates and
+sizes entry/withdrawal for each actual depth. Preview explicitly reports final-
+pass stations. Same 10 mm example: 6.785 mm full depth, versus 4.355 mm in 0.3.20.
+Documented why old H5 nominally used the entire 10 mm: X entered before Z started
+and withdrew only after Z stopped. That sequence has different endpoint behavior.
+
+Validation: real native planner/step ISR simulation, all five depths at 50–500 RPM,
+451 RPM screenshot setup, old/new accelerations, direction, multiple starts,
+slow speed changes and cancellation; phase checked through entry/withdrawal too.
+Geometry sweeps cover triangular/trapezoidal profiles, rates, acceleration,
+low-RPM rounding, tiny depths and all pass directions. Command-emitter and
+G54/units preview regressions passed; ESP32-P4 build and LVGL renders completed.
+No OTA or attached-machine motion commands sent. Includes the uninstalled Rapids
+and X acceleration changes from 0.3.20.
+
 ## 0.3.20 Rapids and X acceleration (built; not installed)
 
 Added persistent fourth STEP choice Rapids, always hold-to-run using the native

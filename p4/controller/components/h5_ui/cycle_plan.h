@@ -23,6 +23,7 @@ typedef struct {
     int direction, spindle_direction;
     double lead, cut_start, cut_end, approach, finish;
     double entry_begin, full_begin, full_end, exit_end, x_steps_mm, z_steps_mm;
+    double thread_x_rate, thread_x_acceleration;
     double cut_acceleration; // Configured mm/s^2, also used for thread speed feasibility.
     double depth_start, depth_end, clearance, takeup;
     unsigned starts, segments;
@@ -38,7 +39,8 @@ double h5_cycle_depth(const h5_cycle_plan_t *, unsigned pass);
 void h5_cycle_point(const h5_cycle_plan_t *, unsigned pass, unsigned segment, double *x, double *z, double *feed);
 const char *h5_cycle_name(h5_cycle_operation_t);
 unsigned h5_cycle_phase(const h5_cycle_plan_t *, unsigned start);
-enum { H5_THREAD_RAMP_SEGMENTS = 12, H5_THREAD_BLOCKS = 2 * H5_THREAD_RAMP_SEGMENTS + 3 };
+enum { H5_THREAD_ACCEL_SEGMENTS = 4, H5_THREAD_RAMP_SEGMENTS = 2 * H5_THREAD_ACCEL_SEGMENTS + 1, H5_THREAD_BLOCKS = 2 * H5_THREAD_RAMP_SEGMENTS + 3 };
+void h5_thread_stations(const h5_cycle_plan_t *, unsigned pass, double *full_begin, double *full_end);
 // Point 0 is the clear approach, point H5_THREAD_BLOCKS is the clear finish.
 void h5_thread_point(const h5_cycle_plan_t *, unsigned pass, unsigned point, double *x, double *z);
 #ifdef __cplusplus

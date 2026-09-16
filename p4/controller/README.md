@@ -11,6 +11,13 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
 ## Current scope
 
+**0.3.21 removes the extra Thread easing curve.** Entry and withdrawal now use
+acceleration / cruise / deceleration sized to each pass, preserving native axis
+limits and spindle phase. The preview reports final-pass stations. The example
+10 mm span now has 6.785 mm at full depth versus 4.355 in 0.3.20. This is still
+shorter than old H5's nominal 10 mm because old H5 stopped Z during entry and
+withdrawal. See [profile and old-firmware comparison](CONTINUOUS_THREADING.md).
+
 **0.3.20 adds a fourth STEP choice, Rapids, and raises X acceleration to
 500 mm/s² for testing.** Rapids always requires holding a direction and uses
 native axis maximum rates; Jog Limits still applies. X max stays 5 mm/s,

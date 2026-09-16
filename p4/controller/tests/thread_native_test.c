@@ -64,8 +64,8 @@ static void pulse(stepper_t *s) {
    max_z_gap=fmax(max_z_gap,seconds-last_z_time);
   last_z_time=seconds;pulses_z++;
  }
- // Assess full-depth thread only. Entry/exit still must have continuous Z pulses.
- if((z-profile.full_begin)*profile.direction>=.02 && (profile.full_end-z)*profile.direction>=.02) {
+ // Assess spindle phase throughout entry, full-depth cut and withdrawal.
+ if((z-profile.entry_begin)*profile.direction>=.02 && (profile.exit_end-z)*profile.direction>=.02) {
   double error=fabs(z-profile.approach)+initial_lag-spindle_data.angular_position*profile.lead;
   if(fabs(error)>phase_error)phase_error=fabs(error);
  }
@@ -108,7 +108,7 @@ bool protocol_buffer_synchronize(void) {
 }
 static void run(double speed,int direction,unsigned pass) {
  h5_cycle_config_t c={.operation=H5_THREAD,.passes=5,.starts=thread_starts,.pitch=.5*direction,.aux_forward=aux_forward,
-  .x_min=0,.x_max=1,.z_min=0,.z_max=thread_starts>1?40:10,.rpm_limit=speed*1.25};
+  .x_min=0,.x_max=1,.z_min=0,.z_max=thread_starts>1?40:10,.rpm_limit=ceil(speed*1.25)};
  h5_cycle_machine_t m={0,0,speed,100,960,200,settings.axis[X_AXIS].acceleration/3600,settings.axis[X_AXIS].max_rate,1200};char error[96];
  assert(h5_cycle_plan(&c,&m,&profile,error,sizeof error));
  cancel_sent=false;
@@ -151,7 +151,10 @@ int main(void) {
  static spindle_ptrs_t driver;driver.get_data=get_spindle;spindle.hal=&driver;spindle.state.on=On;
  st_spindle_sync_cfg(&settings,(settings_changed_flags_t){0});
  for(unsigned speed=50;speed<=500;speed+=50)
-  for(int d=-1;d<=1;d+=2)for(unsigned pass=0;pass<5;pass+=4)run(speed,d,pass);
+  for(int d=-1;d<=1;d+=2)for(unsigned pass=0;pass<5;pass++)run(speed,d,pass);
+ for(unsigned pass=0;pass<5;pass++)run(451,1,pass);
+ settings.axis[0].acceleration=25*3600;run(451,1,0);run(451,-1,4);
+ settings.axis[0].acceleration=500*3600;
  slew=5;run(100,1,4);slew=-5;run(100,-1,4);
  slew=0;settings.axis[0].max_rate=60;run(100,1,4);settings.axis[0].max_rate=300;
  aux_forward=false;run(100,1,4);thread_starts=3;run(100,-1,4);

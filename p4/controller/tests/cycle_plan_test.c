@@ -102,7 +102,7 @@ int main(void)
         .x_min=0,.x_max=1,.z_min=0,.z_max=.005,.rpm_limit=500};
     m.rpm=-400; assert(h5_cycle_plan(&c,&m,&p,error,sizeof(error)));
     CLOSE(p.approach,.005); CLOSE(p.takeup,.005); CLOSE(p.finish,0);
-    // Moving entry/exit: actual stations, fixed across passes, bounded in both directions.
+    // Moving entry/exit: each pass gets its own stations, bounded in both directions.
     c=(h5_cycle_config_t){.operation=H5_THREAD,.passes=5,.starts=1,.pitch=.5,.aux_forward=true,
         .x_min=0,.x_max=1,.z_min=0,.z_max=10,.rpm_limit=125};
     m.rpm=100;m.z_acceleration=100;
@@ -111,14 +111,18 @@ int main(void)
         assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
         assert((p.full_end-p.full_begin)*dir>0);
         for(unsigned pass=0;pass<c.passes;pass++) {
-            double last_z=p.approach;
+            double last_z=p.approach,begin,end;
+            h5_thread_stations(&p,pass,&begin,&end);
+            assert((begin-p.full_begin)*dir<=1e-9 && (end-p.full_end)*dir>=-1e-9);
+            if(pass==c.passes-1){CLOSE(begin,p.full_begin);CLOSE(end,p.full_end);}
+
             for(unsigned point=0;point<=H5_THREAD_BLOCKS;point++) {
                 double x,z;h5_thread_point(&p,pass,point,&x,&z);
                 assert(z>=0 && z<=10 && x>=-.5 && x<=1);
                 assert((z-last_z)*dir>=-1e-9);last_z=z;
                 if(point<=1 || point>=H5_THREAD_BLOCKS-1) CLOSE(x,p.clearance);
-                if(point==H5_THREAD_RAMP_SEGMENTS+1) {CLOSE(z,p.full_begin);CLOSE(x,h5_cycle_depth(&p,pass));}
-                if(point==H5_THREAD_RAMP_SEGMENTS+2) {CLOSE(z,p.full_end);CLOSE(x,h5_cycle_depth(&p,pass));}
+                if(point==H5_THREAD_RAMP_SEGMENTS+1) {CLOSE(z,begin);CLOSE(x,h5_cycle_depth(&p,pass));}
+                if(point==H5_THREAD_RAMP_SEGMENTS+2) {CLOSE(z,end);CLOSE(x,h5_cycle_depth(&p,pass));}
             }
         }
         unsigned phase=h5_cycle_phase(&p,0);
@@ -132,10 +136,42 @@ int main(void)
     c.z_max=40;assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
     c.z_max=10;m.x_max_rate=300;
     assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
-    CLOSE(p.full_begin,2.945);CLOSE(p.full_end,7.060);CLOSE(p.exit_end,9.880);
+    CLOSE(p.full_begin,2.480);CLOSE(p.full_end,7.525);CLOSE(p.exit_end,9.880);
     m.x_max_rate=300;m.x_acceleration=500;
     assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
-    CLOSE(p.full_begin,2.825);CLOSE(p.full_end,7.180);CLOSE(p.exit_end,9.880);
+    CLOSE(p.full_begin,1.610);CLOSE(p.full_end,8.395);CLOSE(p.exit_end,9.880);
+    double first_begin,first_end;
+    h5_thread_stations(&p,0,&first_begin,&first_end);
+    CLOSE(first_begin,.860);CLOSE(first_end,9.145);
+    // Quantized chords must stay within configured X speed at the RPM ceiling.
+    for(unsigned pass=0;pass<c.passes;pass++) {
+        double px,pz;h5_thread_point(&p,pass,0,&px,&pz);
+        for(unsigned point=1;point<=H5_THREAD_BLOCKS;point++) {
+            double x,z;h5_thread_point(&p,pass,point,&x,&z);
+            assert(z>pz);
+            assert(fabs(x-px)/(z-pz)*p.lead*c.rpm_limit/60 <= m.x_max_rate/60+1e-8);
+            px=x;pz=z;
+        }
+    }
     m.x_max_rate=0;assert(!h5_cycle_plan(&c,&m,&p,error,sizeof error));
+    // Both triangular and trapezoidal transitions, low RPM step rounding,
+    // internal/external cutting and all pass depths preserve bounds and rate.
+    const double rates[]={60,300}, accelerations[]={25,500}, depths[]={.001,.1,1}, rpms[]={30,125,564};
+    for(unsigned a=0;a<2;a++)for(unsigned r=0;r<2;r++)for(unsigned d=0;d<3;d++)for(unsigned n=0;n<3;n++)
+    for(int sign=-1;sign<=1;sign+=2)for(unsigned aux=0;aux<2;aux++) {
+        c.x_min=0;c.x_max=depths[d];c.z_min=0;c.z_max=100;c.pitch=.5*sign;
+        c.rpm_limit=rpms[n];c.aux_forward=aux;m.rpm=rpms[n];
+        m.x_max_rate=rates[r];m.x_acceleration=accelerations[a];
+        assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
+        for(unsigned pass=0;pass<c.passes;pass++) {
+            double px,pz;h5_thread_point(&p,pass,0,&px,&pz);
+            for(unsigned point=1;point<=H5_THREAD_BLOCKS;point++) {
+                double x,z;h5_thread_point(&p,pass,point,&x,&z);
+                assert((z-pz)*p.direction>0 && z>=0 && z<=100);
+                assert(fabs(x-px)/fabs(z-pz)*p.lead*c.rpm_limit/60 <= m.x_max_rate/60+1e-8);
+                px=x;pz=z;
+            }
+        }
+    }
     puts("PASS: moving-entry geometry, physical rate feasibility, fixed phase, all profile bounds and clearance");
 }

@@ -5,6 +5,13 @@ Turn/Thread geometry and records its earlier validation. See [OPERATIONS.md](OPE
 for Face, Cut, Ellipse, Gearbox, Cone, Async, parameter edits and the current
 operating limits. See [PORT_PROGRESS.md](PORT_PROGRESS.md) for final regression status.
 
+## Change in 0.3.21: remove extra Thread easing
+
+Entry/withdrawal now use a trapezoidal-velocity X profile, sized separately for
+each depth pass. Points are step-quantized and checked against X maximum speed.
+The final-pass full-depth section is reported explicitly; the synchronization
+origin stays fixed across passes. See [geometry and legacy comparison](CONTINUOUS_THREADING.md).
+
 ## Change in 0.3.19: synchronize and accelerate at clearance
 
 Thread now executes one continuous indexed path: clear Z run-up, moving X
