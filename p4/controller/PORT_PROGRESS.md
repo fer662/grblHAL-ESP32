@@ -392,6 +392,15 @@ IDF 5.5.2 firmware build passed. Application SHA-256:
 `78f7248d26aedd017f9f93e2e1a9db9be7a6bb8b424d5d041016f5be80e4c3e3`.
 OTA installation is pending; no connected motion tests were run.
 
+## 0.3.12 bottom-aligned action row
+
+Moved START and SHIFT to y=652 so their 88-pixel-tall buttons end at y=740,
+aligned with the right-pane controls. The existing LVGL pointer/layout regression
+passed for all eight modes; the Thread render was visually inspected. The normal
+IDF 5.5.2 firmware build passed. Application SHA-256:
+`c7a8d5adfc60cf409a788c958980366e0bc6f48597f102e414417d439699ec55`.
+OTA installation is pending. No connected motion tests were run.
+
 ## Hardware acceptance still required
 
 - [ ] Inspect external STEP/DIR pulse widths, jitter, skew and setup/hold at the connector.

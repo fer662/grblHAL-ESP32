@@ -1,5 +1,13 @@
 # Touchscreen improvements
 
+## Implemented in 0.3.12
+
+START and SHIFT move to y=652, retaining their 88-pixel height. Their bottom
+edges now align at y=740 with EDIT LIMITS and the X- limit button.
+
+Actual LVGL renders: [Thread](docs/ui-0312-thread.png),
+[Gearbox](docs/ui-0312-gearbox.png).
+
 ## Implemented in 0.3.11
 
 All four jog buttons grow from 128 x 128 to **152 x 180**, increasing their touch

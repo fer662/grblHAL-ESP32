@@ -1087,9 +1087,10 @@ void NormalOperationMode::repositionButtons(int targetMode) {
   lv_obj_set_pos(zAxisControls->getContainer(), 24, 208);
   lv_obj_set_pos(pitchContainer, 24, 318);
   lv_obj_set_size(startStopButton, 304, 88);
-  lv_obj_set_pos(startStopButton, 24, 534);
+  // Align the action row with the right pane's bottom edge (y = 740).
+  lv_obj_set_pos(startStopButton, 24, 652);
   lv_obj_set_size(shiftButton, 240, 88);
-  lv_obj_set_pos(shiftButton, 352, 534);
+  lv_obj_set_pos(shiftButton, 352, 652);
 
   int y = 112;
   auto place = [&y](lv_obj_t *button) {
