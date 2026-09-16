@@ -39,17 +39,25 @@ int main(void)
     c.rpm_limit=600; assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
     CLOSE(p.approach,previous_approach); // RPM changes do not move the tool-entry target.
     for(unsigned i=0;i<7;i++) assert(h5_cycle_phase(&p,i)==phases[i]);
+    // Partial-pass reacquisition preserves physical phase in either direction.
+    for(unsigned i=0;i<7;i++) for(int spin=-1;spin<=1;spin+=2) {
+        double at=12.345;
+        unsigned phase=h5_cycle_phase_at(&p,i,at,spin);
+        double physical=p.spindle_direction*((double)i/p.starts+p.direction*(at-p.cut_start)/p.lead);
+        double error=phase/1200.0-spin*physical;
+        assert(fabs(error-round(error)) <= .5/1200+1e-9);
+    }
     c.rpm_limit=360;
     c.threading=false; assert(h5_cycle_plan(&c,&m,&p,error,sizeof(error))); CLOSE(p.lead,.1); assert(p.starts==1);
     h5_cycle_config_t valid=c;
     c.pitch=NAN; assert(!h5_cycle_plan(&c,&m,&p,error,sizeof(error))); c=valid;
-    c.pitch=100; assert(!h5_cycle_plan(&c,&m,&p,error,sizeof(error))); c=valid;
+    c.pitch=100; assert(h5_cycle_plan(&c,&m,&p,error,sizeof(error))); c=valid;
     c.z_max=310; assert(!h5_cycle_plan(&c,&m,&p,error,sizeof(error))); c=valid;
     c.x_min=c.x_max; assert(!h5_cycle_plan(&c,&m,&p,error,sizeof(error))); c=valid;
     c.passes=0; assert(!h5_cycle_plan(&c,&m,&p,error,sizeof(error))); c=valid;
     c.starts=125; assert(!h5_cycle_plan(&c,&m,&p,error,sizeof(error))); c=valid;
-    m.rpm=361; assert(!h5_cycle_plan(&c,&m,&p,error,sizeof(error)));
-    m.rpm=0; assert(!h5_cycle_plan(&c,&m,&p,error,sizeof(error)));
+    m.rpm=361; assert(h5_cycle_plan(&c,&m,&p,error,sizeof(error)));
+    m.rpm=0; assert(h5_cycle_plan(&c,&m,&p,error,sizeof(error)));
     m=(h5_cycle_machine_t){.x=0,.z=0,.rpm=300,.z_acceleration=50,.z_max_rate=960,.z_steps_mm=200,
         .x_acceleration=25,.x_max_rate=60,.x_steps_mm=1200};
     c=(h5_cycle_config_t){.operation=H5_FACE,.passes=2,.starts=1,.pitch=.1,.aux_forward=true,
@@ -105,19 +113,24 @@ int main(void)
     c.operation=H5_THREAD; c.z_max=10;
     assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
     CLOSE(p.takeup,10); CLOSE(p.approach,9.995); CLOSE(p.finish,0);
-    double ramp=ceil(pow(.1*500/60,2)/(2*50)*200)/200;
-    double reserved=2*ramp+.005;
+    // No preview-time RPM/acceleration reservation: only physical step geometry.
     for(int sign=-1;sign<=1;sign+=2) {
         c.pitch=.1*sign;
-        c.z_max=reserved; assert(!h5_cycle_plan(&c,&m,&p,error,sizeof error));
-        c.z_max=reserved+.0025; assert(!h5_cycle_plan(&c,&m,&p,error,sizeof error));
-        c.z_max=reserved+.005; assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
-        CLOSE(fabs(p.finish-p.approach)-2*ramp,.005);
+        c.z_max=.005; assert(!h5_cycle_plan(&c,&m,&p,error,sizeof error));
+        c.z_max=.010; assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
+        CLOSE(fabs(p.finish-p.approach),.005);
     }
-    // More starts need more ramp distance; never silently trim pitch.
-    c.z_max=.5; c.pitch=.1; c.starts=1;
+    c.z_max=.5; c.pitch=.1; c.starts=7;
     assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
-    c.starts=7; assert(!h5_cycle_plan(&c,&m,&p,error,sizeof error));
+    // All profiles can be armed stopped or below the former threshold. Old
+    // protocol RPM ceilings are ignored, including after speed changes.
+    for(unsigned op=H5_TURN;op<=H5_ELLIPSE;op++) {
+        c.operation=op;c.z_max=10;c.rpm_limit=1;
+        for(unsigned i=0;i<5;i++) {
+            double rpms[]={0,.5,29,361,5000};m.rpm=rpms[i];
+            assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
+        }
+    }
     // Photograph regression: the 10 mm span cuts from .005 to 10, not 2.075 to 8.590.
     c=(h5_cycle_config_t){.operation=H5_THREAD,.passes=5,.starts=1,.pitch=.5,.aux_forward=true,
         .x_min=0,.x_max=1,.z_min=0,.z_max=10,.rpm_limit=564};
@@ -129,8 +142,8 @@ int main(void)
     m.z_acceleration=100;assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
     CLOSE(p.cut_acceleration,100);CLOSE(p.approach,.005);CLOSE(p.finish,10);
     assert(h5_cycle_phase(&p,0)==phase);
-    // A short pass can now reach the same feed at 100 but cannot at 50 mm/s^2.
+    // Changing acceleration never changes acceptance of programmed geometry.
     c.z_max=.3;assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
-    m.z_acceleration=50;assert(!h5_cycle_plan(&c,&m,&p,error,sizeof error));
-    puts("PASS: actual cut targets, acceleration feasibility, phase, all profile bounds and clearance");
+    m.z_acceleration=50;assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
+    puts("PASS: actual cut targets, stopped/variable RPM, phase, all profile bounds and clearance");
 }

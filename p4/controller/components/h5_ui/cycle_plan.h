@@ -11,7 +11,7 @@ typedef enum { H5_TURN, H5_THREAD, H5_FACE, H5_CUT, H5_ELLIPSE } h5_cycle_operat
 typedef struct {
     bool threading, aux_forward;
     unsigned passes, starts;
-    double pitch, x_min, x_max, z_min, z_max, rpm_limit;
+    double pitch, x_min, x_max, z_min, z_max, rpm_limit; // rpm_limit: ignored legacy protocol field
     h5_cycle_operation_t operation;
 } h5_cycle_config_t;
 typedef struct {
@@ -22,7 +22,7 @@ typedef struct {
     h5_cycle_config_t config;
     int direction, spindle_direction;
     double lead, cut_start, cut_end, approach, finish;
-    double cut_acceleration; // Configured mm/s^2, also used for thread speed feasibility.
+    double cut_acceleration; // Configured mm/s^2, reported in preview.
     double depth_start, depth_end, clearance, takeup;
     unsigned starts, segments;
     char cut_axis, depth_axis;
@@ -37,6 +37,8 @@ double h5_cycle_depth(const h5_cycle_plan_t *, unsigned pass);
 void h5_cycle_point(const h5_cycle_plan_t *, unsigned pass, unsigned segment, double *x, double *z, double *feed);
 const char *h5_cycle_name(h5_cycle_operation_t);
 unsigned h5_cycle_phase(const h5_cycle_plan_t *, unsigned start);
+unsigned h5_cycle_phase_at(const h5_cycle_plan_t *, unsigned start, double position, int spindle_direction);
+unsigned h5_cycle_segment_at(const h5_cycle_plan_t *, unsigned pass, double x, double z);
 #ifdef __cplusplus
 }
 #endif

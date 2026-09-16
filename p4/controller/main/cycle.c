@@ -22,6 +22,8 @@ static h5_cycle_plan_t plan;
 static unsigned stage, pass, start, segment;
 static uint32_t command_id;
 static bool waiting_ack, cancel_requested, trace_enabled;
+static bool pausing, internal_reset, recovering, reverse_cut;
+static int cut_spindle_direction;
 static char stop_reason[96] = "Cycle cancelled";
 static const char *const names[] = {
     "Setup",   "Retract", "Approach", "Take up",         "Infeed",        "Register",      "Spindle", "Cut",
@@ -106,8 +108,10 @@ static void message(const char *text, bool active)
     published.start = start + 1;
     memcpy(published.message, next, sizeof(next));
     h5_critical_exit(&lock);
-    if (!active)
+    if (!active) {
         h5_operation_release(H5_OWNER_PROFILE);
+        h5_spindle_profile(false);
+    }
     char line[180];
     snprintf(line, sizeof(line), "[H5CYCLE:PASS:%u|START:%u|STAGE:%s]\r\n", pass + 1, start + 1, text);
     hal.stream.write(line);
@@ -115,6 +119,23 @@ static void message(const char *text, bool active)
 void h5_cycle_reset(void)
 {
     h5_follow_reset();
+    if (internal_reset && published.active && !stopping && !sys.alarm) {
+        // A spindle stop/reversal interrupted only the cutting block. Keep
+        // the operation, depth and start; never replay the plunge/retract.
+        internal_reset = pausing = cancel_requested = waiting_ack = false;
+        recovering = true;
+        stage = 0;
+        h5_spindle_profile(true);
+        // This runs inside stream flush, before parser/planner reset. Do not
+        // write UART here: a blocked write can reenter realtime and enqueue a
+        // new command into the stream that is still being discarded.
+        h5_critical_enter(&lock, 2000 + __LINE__);
+        memcpy(published.message, "Armed; waiting for spindle", sizeof("Armed; waiting for spindle"));
+        h5_critical_exit(&lock);
+        return;
+    }
+    internal_reset = pausing = recovering = false;
+    h5_spindle_profile(false);
     h5_operation_release(H5_OWNER_PROFILE);
     h5_critical_enter(&lock, 2000 + __LINE__);
     if (published.active)
@@ -128,6 +149,46 @@ static bool idle(void)
 {
     return state_get() == STATE_IDLE && !st_is_stepping() && !plan_get_current_block();
 }
+static double axis_position(char axis)
+{
+    unsigned a = axis == 'X' ? X_AXIS : Z_AXIS;
+    return (double)sys.position[a] / settings.axis[a].steps_per_mm;
+}
+static void wait_message(const char *text)
+{
+    if (strcmp(published.message, text)) message(text, true);
+}
+static bool prepare_cut(void)
+{
+    double rpm = h5_spindle_profile_rpm();
+    if (rpm == 0) {
+        wait_message("Armed; waiting for spindle");
+        return false;
+    }
+    cut_spindle_direction = rpm < 0 ? -1 : 1;
+    reverse_cut = cut_spindle_direction != plan.spindle_direction;
+    double approach = plan.approach, unused, feed;
+    if (plan.config.operation == H5_ELLIPSE) {
+        h5_cycle_point(&plan, pass, 0, &unused, &approach, &feed);
+        segment = h5_cycle_segment_at(&plan, pass, axis_position('X'), axis_position('Z'));
+    }
+    double here = axis_position(plan.cut_axis);
+    unsigned a = plan.cut_axis == 'X' ? X_AXIS : Z_AXIS;
+    bool at_start = fabs(here - approach) < .5 / settings.axis[a].steps_per_mm;
+    if (plan.config.operation == H5_ELLIPSE)
+        at_start = at_start && fabs(axis_position('X') - unused) < .5 / settings.axis[X_AXIS].steps_per_mm;
+    if (reverse_cut && at_start) {
+        wait_message("At pass start; waiting for forward spindle rotation");
+        return false;
+    }
+    // Native G33 cannot honor a lead above the actual axis maximum. Wait
+    // armed rather than rejecting the operation; there is no preview RPM cap.
+    if (plan.indexed && plan.lead * fabs(rpm) > settings.axis[a].max_rate) {
+        wait_message("Armed; thread feed exceeds axis maximum");
+        return false;
+    }
+    return true;
+}
 static void emit(void)
 {
     if (!h5_cycle_busy() || sys.abort)
@@ -140,6 +201,12 @@ static void emit(void)
     if (ellipse) {
         double unused;
         h5_cycle_point(&plan, pass, 0, &infeed, &approach, &unused);
+    }
+    if (stage == 5 && !prepare_cut()) return;
+    if (stage == 7 && h5_spindle_profile_rpm() * cut_spindle_direction <= 0) {
+        // Spindle changed between the phase/M3 commands and cut submission.
+        stage = 5;
+        return;
     }
     switch (stage) {
     case 0:
@@ -162,21 +229,23 @@ static void emit(void)
         snprintf(line, sizeof(line), "G90G94G53G0%c%.6f", plan.depth_axis, infeed);
         break;
     case 5:
-        snprintf(line, sizeof(line), "$P4PHASE=%u", h5_cycle_phase(&plan, start));
+        snprintf(line, sizeof(line), "$P4PHASE=%u", plan.indexed ?
+                 h5_cycle_phase_at(&plan, start, axis_position(plan.cut_axis), cut_spindle_direction) : 0);
         break;
     case 6:
-        snprintf(line, sizeof(line), "M%dS%.3f", plan.spindle_direction > 0 ? 3 : 4, fabs(h5_spindle_rpm()));
+        snprintf(line, sizeof(line), "M%dS%.3f", cut_spindle_direction > 0 ? 3 : 4, fabs(h5_spindle_profile_rpm()));
         break;
     case 7:
         if (ellipse) {
-            double x, z, feed, px, pz, unused;
+            double x, z, feed, unused;
             h5_cycle_point(&plan, pass, segment + 1, &x, &z, &feed);
-            h5_cycle_point(&plan, pass, segment, &px, &pz, &unused);
-            snprintf(line, sizeof(line), "G91G95G1X%.6fZ%.6fF%.6f", x - px, z - pz, feed);
+            if (reverse_cut) h5_cycle_point(&plan, pass, segment, &x, &z, &unused);
+            snprintf(line, sizeof(line), "G90G95G53G1X%.6fZ%.6fF%.6f", x, z, feed);
         } else if (plan.indexed)
-            snprintf(line, sizeof(line), "G91G33%c%.6fK%.6f", plan.cut_axis, endpoint - approach, plan.lead);
+            snprintf(line, sizeof(line), "G91G33%c%.6fK%.6f", plan.cut_axis,
+                     (reverse_cut ? approach : endpoint) - axis_position(plan.cut_axis), plan.lead);
         else
-            snprintf(line, sizeof(line), "G91G95G1%c%.6fF%.6f", plan.cut_axis, endpoint - approach,
+            snprintf(line, sizeof(line), "G90G95G53G1%c%.6fF%.6f", plan.cut_axis, reverse_cut ? approach : endpoint,
                      plan.lead);
         break;
     case 11:
@@ -214,6 +283,7 @@ static void poll_cycle(void)
     if (begin) {
         pass = start = stage = segment = 0;
         waiting_ack = cancel_requested = false;
+        pausing = internal_reset = recovering = reverse_cut = false;
         char error[96];
         h5_cycle_machine_t machine = {.x = (double)sys.position[0] / settings.axis[0].steps_per_mm,
                                       .z = (double)sys.position[2] / settings.axis[2].steps_per_mm,
@@ -240,15 +310,15 @@ static void poll_cycle(void)
             message(error, false);
             return;
         }
+        h5_spindle_profile(true);
         h5_critical_enter(&lock, 2000 + __LINE__);
         owns_stream = true;
         h5_critical_exit(&lock);
         char info[480];
         snprintf(info, sizeof(info),
-                 "[H5PLAN:LEAD:%.6f|APPROACH:%.6f|FINISH:%.6f|CLEARANCE:%.6f|RPM_"
-                 "LIMIT:%.3f|CUT_LENGTH:%.6f|ACCEL:%.3f]\r\n",
+                 "[H5PLAN:LEAD:%.6f|APPROACH:%.6f|FINISH:%.6f|CLEARANCE:%.6f|RPM:%.3f|CUT_LENGTH:%.6f|ACCEL:%.3f]\r\n",
                  plan.lead, plan.approach, plan.finish, plan.clearance,
-                 config.rpm_limit, fabs(plan.finish-plan.approach), plan.cut_acceleration);
+                 machine.rpm, fabs(plan.finish-plan.approach), plan.cut_acceleration);
         hal.stream.write(info);
     }
     if (sys.alarm) {
@@ -256,34 +326,48 @@ static void poll_cycle(void)
         return;
     }
     if (sys.abort) {
+        if (internal_reset && !stop) return; // Retain the pass until the core finishes resetting.
         message(stop ? stop_reason : "Cycle reset", false);
         return;
     }
-    if (!stop &&
-        (state_get() == STATE_HOLD || (stage >= 1 && (h5_spindle_rpm() * plan.spindle_direction < 30 ||
-                                                      fabs(h5_spindle_rpm()) > plan.config.rpm_limit)))) {
-        snprintf(stop_reason, sizeof(stop_reason), "Spindle outside RPM range or feed hold");
+    if (!stop && state_get() == STATE_HOLD) {
+        snprintf(stop_reason, sizeof(stop_reason), "Cycle cancelled by feed hold");
         message(stop_reason, true);
         h5_cycle_cancel();
         stop = true;
     }
-    if (stop) {
+    double rpm = h5_spindle_profile_rpm();
+    if (!stop && stage == 7 && waiting_ack &&
+        (rpm * cut_spindle_direction < 0 || (rpm == 0 && !h5_spindle_waiting_index()))) {
+        h5_status_t completed;
+        h5_bridge_snapshot(&completed);
+        // A cut that has already reached its endpoint must still retract,
+        // even if the spindle stops in the same foreground iteration.
+        if (!idle() || completed.completed_id != command_id || completed.command_status)
+            pausing = true;
+    }
+    if (stop || pausing) {
         if (!cancel_requested) {
+            h5_spindle_follow_braking();
             h5_bridge_discard_cycle_commands();
             // G33 intentionally disables feed hold. Motion cancel still uses
             // the core's normal deceleration, then we discard the stopped pass.
             system_set_exec_state_flag(EXEC_MOTION_CANCEL);
             cancel_requested = true;
-            message("Stopping cycle", true);
+            message(stop ? "Stopping cycle" : "Pausing cut; operation remains armed", true);
         }
         // The core's index-wait loop explicitly handles EXEC_STOP by resetting
         // before st_wake_up: no STEP output has started in that case.
-        if (h5_spindle_waiting_index())
+        if (h5_spindle_waiting_index()) {
+            internal_reset = !stop;
             system_set_exec_state_flag(EXEC_STOP);
+        }
         // Timer shutdown precedes the core's cycle-complete handling. Wait for
         // both, otherwise mc_reset correctly reports an in-motion reset alarm.
-        else if (state_get() == STATE_IDLE && !st_is_stepping() && !sys.step_control.execute_hold)
+        else if (state_get() == STATE_IDLE && !st_is_stepping() && !sys.step_control.execute_hold) {
+            internal_reset = !stop;
             protocol_enqueue_realtime_command(CMD_RESET);
+        }
         return;
     }
     if (waiting_ack) {
@@ -292,15 +376,21 @@ static void poll_cycle(void)
         if (status.completed_id != command_id)
             return;
         if (status.command_status) {
+            if (stage == 7 && (status.command_status == Status_GcodeSpindleNotRunning ||
+                              status.command_status == Status_GcodeMaxFeedRateExceeded)) {
+                pausing = true; // RPM changed during submission; keep the pass.
+                return;
+            }
             snprintf(stop_reason, sizeof(stop_reason), "Cycle command rejected (%d)", status.command_status);
             message(stop_reason, true);
             h5_cycle_cancel();
             return;
         }
-        if (stage == 7 && plan.config.operation == H5_ELLIPSE && segment + 1 < plan.segments) {
+        if (stage == 7 && plan.config.operation == H5_ELLIPSE &&
+            (reverse_cut ? segment > 0 : segment + 1 < plan.segments)) {
             // Keep lookahead populated across chords; waiting for Idle here
             // would force a stop at every point on the ellipse.
-            segment++;
+            if (reverse_cut) segment--; else segment++;
             waiting_ack = false;
             emit();
             return;
@@ -320,7 +410,12 @@ static void poll_cycle(void)
                 h5_spindle_command(STATE_IDLE, points);
             }
         }
-        if (stage == 10) {
+        if (stage == 0 && recovering) {
+            recovering = false;
+            stage = 5;
+        } else if (stage == 7 && reverse_cut) {
+            stage = 5; // Retraced to the start: wait without retracting or advancing depth.
+        } else if (stage == 10) {
             if (++start == plan.starts) {
                 start = 0;
                 pass++;

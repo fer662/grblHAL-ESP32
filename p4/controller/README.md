@@ -1,15 +1,25 @@
 # H5 grblHAL ESP32-P4 port
 
 This is a separate ESP-IDF application using a pinned `main/grbl` core submodule.
-The core fork keeps six small changes separate: spindle timing/acceleration,
-configurable AMASS cutoff, a cancellation/completion race fix, and continuous
-spindle phase across connected motion blocks. See
+The core fork keeps its changes separate: spindle timing/acceleration,
+configurable AMASS cutoff, a cancellation/completion race fix, continuous
+spindle phase across connected motion blocks, and configurable index-wait/rate headroom. See
 [spindle tracking](SPINDLE_TRACKING.md), [hand following](HAND_FOLLOW.md) and the
 upstream-update table below. The original ESP32/S3 driver source
 remains untouched; its build has not been revalidated against these core changes.
 The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
 ## Current scope
+
+**0.3.24 restores stopped-spindle operation and saved machine state.** Profile
+cycles have no 30 RPM minimum or preview-derived RPM ceiling. They can position
+and plunge with the spindle off, then wait armed. Spindle stops pause a cutting
+pass; restart resumes it, and reverse rotation retraces toward its start without
+advancing depth. Explicit STOP still cancels. Thread re-registers phase before
+resuming; actual configured axis maximum rates remain in force. Normal manual
+X override now uses the same 1 mm/s as idle jogging, rather than the 5 mm/s rapid
+maximum. Settled machine positions, machining stops and axis-disable selections
+are saved/restored alongside native G54 offsets. See [operation semantics](OPERATIONS.md).
 
 **0.3.23 restores the old Thread operation order:** X reaches depth before the
 native G33 Z pass and retracts after Z stops. The 10 mm example now reports
@@ -357,8 +367,8 @@ version, settings version, core source inventory and ISR dependencies on every
 core upgrade. Do not advance the core automatically from a moving branch.
 
 The core submodule points to `https://github.com/fer662/grblHAL-core`, branch
-`codex/spindle-tracking`, commit `e59703f`.
-It has six isolated commits over upstream `516e5ad80757bd2eba86bff18feb613ca121dc16`:
+`codex/spindle-tracking`, commit `c99424f`.
+It has seven isolated commits over upstream `516e5ad80757bd2eba86bff18feb613ca121dc16`:
 
 | Commit | Purpose |
 | --- | --- |
@@ -368,6 +378,7 @@ It has six isolated commits over upstream `516e5ad80757bd2eba86bff18feb613ca121d
 | `f799fd0` | Configurable AMASS cutoff; the upstream default remains 8000 Hz. |
 | `09df51b` | Avoid waiting for a second completion when cancellation and completion coincide. |
 | `e59703f` | Opt-in continuous synchronized blocks retain one spindle origin and acceleration phase reference; disabled in the P4 port since 0.3.23. |
+| `c99424f` | Configurable index-wait timeout and path-rate headroom; upstream defaults remain 5 s and 90%, P4 selects unlimited wait and 100% of configured rate. |
 
 The original `codex/spindle-segment-time` branch retains only the first fix.
 Preserve this separation when merging/rebasing upstream; drop a local patch only

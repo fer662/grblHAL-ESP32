@@ -143,6 +143,7 @@ int main(void) {
  st_spindle_sync_cfg(&settings,(settings_changed_flags_t){0});
  for(unsigned speed=50;speed<=500;speed+=50)
   for(int d=-1;d<=1;d+=2)for(unsigned pass=0;pass<5;pass++)run(speed,d,pass);
+ for(unsigned speed=1;speed<30;speed+=4)run(speed,1,0);
  for(unsigned pass=0;pass<5;pass++)run(451,1,pass);
  settings.axis[0].acceleration=25*3600;run(451,1,0);run(451,-1,4);
  settings.axis[0].acceleration=500*3600;

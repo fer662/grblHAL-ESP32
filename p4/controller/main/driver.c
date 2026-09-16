@@ -26,6 +26,7 @@
 #include "spindle.h"
 #include "cycle.h"
 #include "storage.h"
+#include "preferences.h"
 #include "network.h"
 #include "update.h"
 #include "diagnostics_internal.h"
@@ -126,6 +127,7 @@ void h5_axis_set_disabled(char axis, bool disabled)
         axis_stop_requested = axis_change_pending = true;
     }
     irq_enable();
+    h5_saved_disabled_set(next);
 }
 static void axis_enable_poll(void)
 {
@@ -329,7 +331,7 @@ static void limits_enable(bool on, axes_signals_t axes) { }
 static control_signals_t controls(void) { return (control_signals_t){.motor_fault = fault}; }
 static coolant_state_t coolant_get(void) { return (coolant_state_t){0}; }
 static void coolant_set(coolant_state_t state) { }
-static uint32_t ticks_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
+static uint32_t IRAM_ATTR ticks_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
 static uint64_t micros(void) { return esp_timer_get_time(); }
 static void delayed(void *arg)
 {
@@ -587,6 +589,8 @@ static bool setup(settings_t *s)
 }
 bool driver_init(void)
 {
+    disabled_requested = disabled_applied = h5_saved_disabled_get();
+    hal.get_position = h5_storage_restore_position;
     hal.info = "ESP32-P4";
     hal.driver_version = "260914";
     hal.driver_options = H5_BENCH_ONLY ? "BENCH_ONLY,GPTIMER,PCNT" : "AXIS_CONTROL,GPTIMER,PCNT";

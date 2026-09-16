@@ -14,6 +14,11 @@ typedef struct {
 } h5_preferences_t;
 bool h5_preferences_get(h5_preferences_t *);
 void h5_preferences_set(const h5_preferences_t *);
+// Machine-step endpoints: X min/max, Z min/max. INT32_MIN/MAX mean unset.
+void h5_saved_limits_get(int32_t limits[4]);
+void h5_saved_limits_set(const int32_t limits[4]);
+uint8_t h5_saved_disabled_get(void);
+void h5_saved_disabled_set(uint8_t mask);
 #ifdef __cplusplus
 }
 #endif

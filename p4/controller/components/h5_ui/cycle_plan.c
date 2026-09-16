@@ -17,7 +17,6 @@ bool h5_cycle_plan(const h5_cycle_config_t *c, const h5_cycle_machine_t *m, h5_c
                              c->x_max,
                              c->z_min,
                              c->z_max,
-                             c->rpm_limit,
                              m->x,
                              m->z,
                              m->rpm,
@@ -36,8 +35,6 @@ bool h5_cycle_plan(const h5_cycle_config_t *c, const h5_cycle_machine_t *m, h5_c
         return fail(error, size, "Unknown cycle operation");
     if (c->x_min >= c->x_max || (c->operation != H5_CUT && c->z_min >= c->z_max))
         return fail(error, size, "Set both X and Z machining bounds");
-    if (fabs(m->rpm) < 30 || c->rpm_limit < fabs(m->rpm))
-        return fail(error, size, "Spindle must run within the selected RPM limit");
     if (m->z_acceleration <= 0 || m->z_steps_mm <= 0 || m->z_max_rate <= 0)
         return fail(error, size, "Invalid Z motion settings");
     p->config = *c;
@@ -46,8 +43,7 @@ bool h5_cycle_plan(const h5_cycle_config_t *c, const h5_cycle_machine_t *m, h5_c
     bool face = p->config.operation == H5_FACE, cut = p->config.operation == H5_CUT;
     p->cut_axis = face || cut ? 'X' : 'Z';
     p->depth_axis = face || cut ? 'Z' : 'X';
-    // Thread needs phase registration; its synchronization travel must fit
-    // inside the entered bounds. Ordinary turning uses G95 feed like facing.
+    // Thread needs phase registration. Ordinary turning uses G95 like facing.
     p->indexed = p->config.operation == H5_THREAD;
     double rate = face || cut ? m->x_max_rate : m->z_max_rate;
     double steps = face || cut ? m->x_steps_mm : m->z_steps_mm;
@@ -56,9 +52,7 @@ bool h5_cycle_plan(const h5_cycle_config_t *c, const h5_cycle_machine_t *m, h5_c
         return fail(error, size, "Invalid cutting axis settings");
     p->starts = p->config.operation == H5_THREAD ? c->starts : 1;
     p->lead = fabs(c->pitch) * p->starts;
-    if (p->lead * c->rpm_limit > rate * .89)
-        return fail(error, size, "Reduce pitch, starts or spindle RPM");
-    p->spindle_direction = m->rpm > 0 ? 1 : -1;
+    p->spindle_direction = m->rpm < 0 ? -1 : 1;
     p->direction = (c->pitch > 0 ? 1 : -1) * p->spindle_direction;
     double main_min = face || cut ? c->x_min : c->z_min, main_max = face || cut ? c->x_max : c->z_max;
     double depth_min = face ? c->z_min : c->x_min, depth_max = face ? c->z_max : c->x_max;
@@ -71,17 +65,11 @@ bool h5_cycle_plan(const h5_cycle_config_t *c, const h5_cycle_machine_t *m, h5_c
     p->approach = p->takeup = p->cut_start;
     p->finish = p->cut_end;
     if (p->indexed) {
-        // Return to the boundary, then take up one step in the cutting
-        // direction. Acceleration and braking consume usable thread length;
-        // neither is permission to travel beyond a cleared shoulder.
+        // Return to the boundary, then take up one step inside the cut.
+        // Geometry does not depend on the spindle speed at preview/startup.
         p->approach += p->direction / steps;
-        // Necessary speed feasibility, not a claimed full-pitch region. A
-        // rest-to-rest pass must have room for both ramps at the RPM ceiling
-        // and at least one step at feed. No arbitrary settling-time allowance.
-        double v = p->lead * c->rpm_limit / 60;
-        double ramp = ceil(v * v / (2 * acceleration) * steps) / steps;
-        if (fabs(p->finish - p->approach) < 2 * ramp + 1 / steps - 1e-9)
-            return fail(error, size, "Thread travel too short to reach feed at RPM limit; reduce RPM or increase acceleration");
+        if ((p->finish - p->approach) * p->direction < 1 / steps - 1e-9)
+            return fail(error, size, "Thread travel needs a takeup step and a cutting step");
     }
     if (cut)
         p->depth_start = p->depth_end = p->clearance = m->z;
@@ -92,10 +80,6 @@ bool h5_cycle_plan(const h5_cycle_config_t *c, const h5_cycle_machine_t *m, h5_c
         p->depth_start = c->x_min;
         p->depth_end = c->x_max;
         p->clearance = c->x_min - .5;
-        double ratio = (c->x_max - c->x_min) / (c->z_max - c->z_min);
-        if (p->lead * c->rpm_limit * M_PI / 2 > .89 * m->z_max_rate ||
-            p->lead * c->rpm_limit * M_PI / 2 * ratio > .89 * m->x_max_rate)
-            return fail(error, size, "Ellipse exceeds X/Z feed limits; reduce RPM or pitch");
         double radius = fmax(c->x_max - c->x_min, c->z_max - c->z_min);
         p->segments = (unsigned)fmax(8, ceil(M_PI / 2 * sqrt(radius / (8 * .002))));
         if (p->segments > 256)
@@ -120,10 +104,15 @@ double h5_cycle_depth(const h5_cycle_plan_t *p, unsigned pass)
 }
 unsigned h5_cycle_phase(const h5_cycle_plan_t *p, unsigned start)
 {
+    return h5_cycle_phase_at(p, start, p->approach, p->spindle_direction);
+}
+unsigned h5_cycle_phase_at(const h5_cycle_plan_t *p, unsigned start, double position, int spindle_direction)
+{
     // Reference the entered start bound, regardless of the approach offset.
     // Choose each start directly to avoid cumulative rounding (e.g. seven starts).
-    double offset = p->direction * (p->approach - p->cut_start);
-    long phase = lround(1200.0 * ((double)start / p->starts + offset / p->lead));
+    double offset = p->direction * (position - p->cut_start);
+    long phase = lround(1200.0 * spindle_direction * p->spindle_direction *
+                       ((double)start / p->starts + offset / p->lead));
     return (unsigned)((phase % 1200 + 1200) % 1200);
 }
 
@@ -131,6 +120,23 @@ const char *h5_cycle_name(h5_cycle_operation_t op)
 {
     static const char *names[] = {"Turn", "Thread", "Face", "Cut", "Ellipse"};
     return op <= H5_ELLIPSE ? names[op] : "Unknown";
+}
+unsigned h5_cycle_segment_at(const h5_cycle_plan_t *p, unsigned pass, double x, double z)
+{
+    // Locate the stopped point, not the last queued chord: lookahead can be far ahead.
+    unsigned nearest = 0;
+    double best = INFINITY, ax, az, feed;
+    h5_cycle_point(p, pass, 0, &ax, &az, &feed);
+    for (unsigned i = 0; i < p->segments; i++) {
+        double bx, bz;
+        h5_cycle_point(p, pass, i + 1, &bx, &bz, &feed);
+        double dx = bx - ax, dz = bz - az;
+        double t = fmax(0, fmin(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)));
+        double distance = hypot(x - ax - t * dx, z - az - t * dz);
+        if (distance < best) { best = distance; nearest = i; }
+        ax = bx; az = bz;
+    }
+    return nearest;
 }
 void h5_cycle_point(const h5_cycle_plan_t *p, unsigned pass, unsigned segment, double *x, double *z,
                     double *feed)

@@ -6,6 +6,23 @@ Earlier acceptance used a disconnected Waveshare P4 with enables locked. The
 0.3.3 main build enables normal axis controls for the operator-requested first
 unloaded Z test; installation status and remaining checks are recorded below.
 
+## 0.3.24 assisted-operation compatibility (built; not installed)
+
+Profiles can start with the spindle off; removed 30 RPM/preview-ceiling policies
+and the P4 index-wait timeout. Stops retain pass/depth, with phase reacquisition
+for Thread. Reversal retraces without advancing depth; explicit STOP cancels.
+Actual axis maximum rates/acceleration remain. Turn/Face G95 behavior is retained.
+Normal X manual override now shares idle jog speed (1 mm/s); Rapids remains 5 mm/s
+with the current settings. Machine position, machining stops and axis-disable
+selection now persist alongside native G54. Machine snapshots commit after
+500 ms of settled idle state; interrupted motion restores the last saved snapshot.
+
+Validation: host profile lifecycle/command tests across all five modes, stopped
+startup, pause/retrace, endpoint/STOP races, low-RPM index wait, native planner/
+segment/ISR simulation including 1 RPM, shared jog rate regression, persistence
+round-trip/corrupt-record/retry/concurrent-edit tests and the ESP32-P4 build.
+No OTA, remote motion or new loaded-machine validation performed.
+
 ## 0.3.23 restored Thread order (built; not installed)
 
 Restored old H5's plunge / Z-only pass / retract ordering via native G33. Removed

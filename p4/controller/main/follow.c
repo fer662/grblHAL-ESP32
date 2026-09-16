@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "grbl/hal.h"
 #include "follow.h"
+#include "jog_rate.h"
 #include "freertos/FreeRTOS.h"
 #include "critical.h"
 #include "grbl/planner.h"
@@ -396,7 +397,7 @@ static void poll(void)
         if (distance <= 0)
             return;
         snprintf(line, sizeof(line), "$J=G21G91%c%.6fF%.3f", axis, sign * distance,
-                 settings.axis[a].max_rate);
+                 h5_jog_feed(axis, settings.axis[a].max_rate, false));
         manual_motion = true;
         stage = 0;
         send(line);

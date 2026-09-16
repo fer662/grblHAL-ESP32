@@ -3,6 +3,7 @@
 #include "lv_conf.h"
 #include "bridge.h"
 #include "follow.h"
+#include "jog_rate.h"
 #include "preferences.h"
 #include "update.h"
 #include "diagnostics.h"
@@ -166,7 +167,7 @@ void h5_ui_jog(Axis *a, int sign, bool pressed)
     }
     held_axis = a;
     uint32_t before = last_command;
-    const float feed = rapid ? status.max_rate[a == &x ? 0 : 2] : (a == &x ? 60 : 960);
+    const float feed = h5_jog_feed(a->name, status.max_rate[a == &x ? 0 : 2], rapid);
     if (!std::isfinite(feed) || feed <= 0) { held_axis = nullptr; notice = "Axis speed is unavailable"; return; }
     jog(a, sign, distance, feed);
     if (!continuous_jog && last_command != before) single_jog_id = last_command;
@@ -260,13 +261,13 @@ static void format_cycle_preview(const h5_cycle_plan_t &plan, char *text, size_t
     snprintf(text,size,
         "%s cycle preview\n\n%u depth passes x %u starts | lead %.4f %s/rev\n"
         "%c travel bounds: %.*f to %.*f %s\n%s\n"
-        "Keep spindle between 30 and %.0f RPM in the current direction.\n"
+        "May start with spindle stopped; cutting waits for spindle rotation.\n"
         "Coordinates: %s work zero and screen units; X is slide travel.\n"
         "Cutting-axis travel stays within bounds; clearance retract is separate.\n"
         "STOP decelerates and cancels the pass; it does not resume mid-pass.",
         h5_cycle_name(plan.config.operation),plan.config.passes,plan.starts,plan.lead*scale,unit,
         plan.cut_axis,digits,coordinate(plan.cut_axis,plan.cut_start),digits,coordinate(plan.cut_axis,plan.cut_end),unit,
-        geometry,plan.config.rpm_limit,h5_ui_work_system());
+        geometry,h5_ui_work_system());
 }
 static void preview_cycle()
 {
@@ -289,8 +290,7 @@ static void preview_cycle()
     preview_config.z_min = z.rightStop/steps_mm(&z);
     preview_config.z_max = z.leftStop/steps_mm(&z);
     if (mode==MODE_CUT) preview_config.z_min=preview_config.z_max=z.pos/steps_mm(&z);
-    double lead=fabs(preview_config.pitch)*preview_config.starts;
-    preview_config.rpm_limit = lead > 0 ? fmin(ceil(fabs(status.rpm)*1.25), .88*status.max_rate[mode==MODE_FACE || mode==MODE_CUT ? 0 : 2]/lead) : 0;
+    preview_config.rpm_limit = 0; // Legacy command field; no per-cycle RPM window.
     h5_cycle_machine_t machine = {x.pos/steps_mm(&x),z.pos/steps_mm(&z),status.rpm,
         status.acceleration[2],status.max_rate[2],steps_mm(&z),status.acceleration[0],status.max_rate[0],steps_mm(&x)};
     h5_cycle_plan_t plan;
@@ -345,6 +345,11 @@ void buttonMeasurePress()
 }
 void h5_ui_sync()
 {
+    const int32_t limits[] = {x.rightStop == LONG_MIN ? INT32_MIN : (int32_t)x.rightStop,
+        x.leftStop == LONG_MAX ? INT32_MAX : (int32_t)x.leftStop,
+        z.rightStop == LONG_MIN ? INT32_MIN : (int32_t)z.rightStop,
+        z.leftStop == LONG_MAX ? INT32_MAX : (int32_t)z.leftStop};
+    h5_saved_limits_set(limits);
     h5_preferences_t prefs={};prefs.version=1;prefs.mode=mode;prefs.measure=measure;prefs.pitch_type=pitchType;
     prefs.pitch=dupr;prefs.move_step=moveStep;prefs.passes=turnPasses;prefs.starts=starts;prefs.cone_ratio=coneRatio;
     prefs.aux_forward=auxForward;prefs.sound=buzzerEnabled;prefs.jog_mode=jogContinuous?0:1;h5_preferences_set(&prefs);
@@ -538,6 +543,15 @@ static void ui_task(void *)
 }
 extern "C" void h5_ui_start(void)
 {
+    int32_t limits[4];
+    h5_saved_limits_get(limits);
+    x.rightStop = limits[0] == INT32_MIN ? LONG_MIN : limits[0];
+    x.leftStop = limits[1] == INT32_MAX ? LONG_MAX : limits[1];
+    z.rightStop = limits[2] == INT32_MIN ? LONG_MIN : limits[2];
+    z.leftStop = limits[3] == INT32_MAX ? LONG_MAX : limits[3];
+    uint8_t disabled = h5_saved_disabled_get();
+    x.disabled = disabled & 1;
+    z.disabled = disabled & 4;
     h5_preferences_t prefs;
     if(h5_preferences_get(&prefs)) {
         mode=prefs.mode;measure=prefs.measure;pitchType=(PitchType)prefs.pitch_type;dupr=prefs.pitch;moveStep=prefs.move_step;

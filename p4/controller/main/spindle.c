@@ -23,6 +23,13 @@ static portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
 static bool ready;
 static volatile bool tracking, waiting;
 static volatile bool follow_mode, follow_braking;
+static volatile bool profile_mode;
+static volatile float profile_last_rpm = 1;
+void h5_spindle_profile(bool enabled) {
+    profile_mode = enabled;
+    follow_braking = false;
+    if (h5_spindle_rpm() != 0) profile_last_rpm = fabsf(h5_spindle_rpm());
+}
 static volatile float follow_last_rpm=30;
 void h5_spindle_follow(bool enabled) {follow_mode=enabled;follow_braking=false;follow_last_rpm=30;}
 void h5_spindle_follow_braking(void) {follow_braking=true;}
@@ -34,6 +41,8 @@ static uint32_t index_phase;
 static float phase_compensation, lead_distance;
 static int64_t rpm_count, furthest;
 static float measured_rpm;
+static float last_edge_rpm;
+static uint32_t edge_interval_ms;
 static spindle_data_t foreground_data, interrupt_data;
 static const char *sync_fault = "NONE";
 static uint32_t block_pulses, axis_pulses[2];
@@ -44,6 +53,16 @@ static sample_t samples[512];
 static unsigned sample_count;
 static float block_pitch, block_steps_mm;
 float h5_spindle_rpm(void) { return measured_rpm; }
+float IRAM_ATTR h5_spindle_profile_rpm(void)
+{
+    // Below one encoder count per 50 ms sample, a zero sample isn't a stop.
+    // Use the last count interval until three such intervals pass. There is
+    // no minimum operating RPM and no extrapolated encoder position.
+    if (measured_rpm == 0 && edge_interval_ms && fabsf(last_edge_rpm) < 30 &&
+        hal.get_elapsed_ticks() - last_change < 3 * edge_interval_ms)
+        return last_edge_rpm;
+    return measured_rpm;
+}
 
 // PCNT resets at +/-30000. A higher-priority step IRQ can observe the
 // reset before the PCNT ISR updates its software accumulator. Fold that
@@ -97,8 +116,9 @@ static spindle_data_t *IRAM_ATTR get_data(spindle_data_request_t request)
         // A zero-RPM replan can leave a cancelled G33 waiting on an
         // effectively infinite step period. Assisted feed cancels on stop;
         // retain its last nonzero planning RPM until deceleration finishes.
-        float rpm=fabsf(measured_rpm);
-        data->rpm = follow_mode && (follow_braking || rpm<30) ? follow_last_rpm : rpm;
+        float rpm=fabsf(profile_mode ? h5_spindle_profile_rpm() : measured_rpm);
+        data->rpm = profile_mode && (follow_braking || (waiting && rpm == 0)) ? profile_last_rpm :
+                    follow_mode && (follow_braking || rpm<30) ? follow_last_rpm : rpm;
         data->ccw = measured_rpm < 0;
         data->state_programmed = commanded;
     }
@@ -258,14 +278,20 @@ void h5_spindle_poll(void)
         last_raw = raw;
         int64_t counts = accumulated;
         portEXIT_CRITICAL(&lock);
-        if (delta) last_change = now;
+        if (delta) {
+            edge_interval_ms = (now - last_change) / abs(delta);
+            if (edge_interval_ms)
+                last_edge_rpm = (delta > 0 ? 1 : -1) * 60000.0f / (H5_ENCODER_CPR * edge_interval_ms);
+            last_change = now;
+        }
         if (now - rpm_time >= 50) {
             measured_rpm = (float)(counts - rpm_count) * 60000.0f / (H5_ENCODER_CPR * (now - rpm_time));
+            if (profile_mode && !follow_braking && measured_rpm != 0) profile_last_rpm = fabsf(measured_rpm);
             if(follow_mode && !follow_braking && fabsf(measured_rpm)>=30)follow_last_rpm=fabsf(measured_rpm);
             rpm_count = counts; rpm_time = now;
         }
         int64_t oriented = commanded.ccw ? -counts : counts;
-        if (tracking && !h5_follow_busy()) {
+        if (tracking && !h5_follow_busy() && !profile_mode) {
             if (oriented > furthest) furthest = oriented;
             if (now - last_change > 100) { sync_fault = "STALL"; h5_motion_fault(); }
             else if (furthest - oriented > 3) { sync_fault = "REVERSED"; h5_motion_fault(); }

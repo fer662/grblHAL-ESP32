@@ -37,6 +37,8 @@ int main() {
     assert(strstr(text,"lead 0.1000 mm/rev"));
     assert(!strstr(text,"Run-in") && !strstr(text,"(est.)"));
     assert(strstr(text,"G54 work zero and screen units"));
+    assert(strstr(text,"May start with spindle stopped"));
+    assert(!strstr(text,"30 and") && !strstr(text,"RPM"));
     assert(!strstr(text,"machine coordinates"));
     assert(!memcmp(&saved,&plan,sizeof plan)); // Presentation must not change motion geometry.
     measure=1;format_cycle_preview(plan,text,sizeof text);

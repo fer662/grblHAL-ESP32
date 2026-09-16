@@ -24,10 +24,26 @@ Async arm from START and remain armed at a bound. STOP decelerates, discards
 queued commands and resets parser state while retaining the stopped position.
 There is no automatic recovery retract after cancellation.
 
+Profile cycles may be started with the spindle stopped. Positioning and X/depth
+infeed execute, then the cut waits armed for rotation. There is no minimum RPM,
+preview-derived RPM ceiling or five-second Thread index timeout. Stopping the
+spindle during cutting decelerates and retains the pass/depth. Restart in the
+same direction resumes the remaining cut; restart in reverse retraces the cut
+and waits at its starting station, without advancing the depth. Thread reacquires
+spindle phase at the stopped position. STOP is an explicit cancellation and does
+not auto-resume. Turn/Face/Cut/Ellipse still use G95; Thread uses G33.
+
+When started at zero RPM, pitch sign selects the initial travel direction as
+with the old firmware. A reverse-running spindle at preview/start selects the
+opposite travel direction. Actual axis rate/acceleration settings are retained:
+Thread waits armed if lead times RPM exceeds its axis maximum, instead of issuing
+an impossible G33 or cancelling the whole cycle. A later RPM increase is handled
+by native planning; removing policy windows does not make unlimited feed achievable.
+
 During an armed feed, a manual arrow pauses automatic motion, performs the manual
-move and resumes after release. Finite increments repeat while the finger is
-held, including across the internal cancellation reset; continuous jogging
-remains held until release. Z increments in spindle modes round to whole
+move and resumes after release. Single Step completes one increment; Hold stops on release. Normal manual
+override and idle jogging share rates: X 60 and Z 960 mm/min, capped by native
+axis settings. Rapids remains a separate idle-jog selection. Z increments in spindle modes round to whole
 leads, unless clipped by a bound. The spindle/Z registration survives ordinary
 stop/reverse and manual override. Whole revolutions while waiting at a bound do
 not accumulate a later catch-up move.
@@ -51,12 +67,13 @@ The last depth is retained. It never jumps out of a cut halfway through.
 - X is radial slide travel. X0/Z0 select and set native G54. DRO, limit editor and
   previews use the active core work coordinates and selected mm/in display units.
   Saved endpoints and generated moves retain machine coordinates when zero changes.
-  Re-establish work zero after power-up until a repeatable machine reference exists.
+  The last saved machine position and native G54 offset are restored at startup.
+  This assumes the axes did not move while unpowered; restoration is not homing.
   G18 is the supported arc plane; Y and G76 are rejected.
 - Thread infeeds X at stationary Z, waits for phase, then makes a native G33
   Z-only pass at depth. X retracts after Z stops. Preview reports commanded
   infeed/retract Z positions and travel at depth; a 10 mm span has 9.995 mm travel
-  after the one-step approach. Native acceleration and speed feasibility remain.
+  after the one-step approach. Native acceleration and axis maximum rates remain.
   See [threading](THREADING.md). Clearance is separate from cutting-axis bounds.
 - 0.3.18 upgrades saved default Z acceleration from 50 to 100 mm/s² once, through
   native grbl settings; custom tuning and X settings are retained. Bench builds
@@ -77,13 +94,20 @@ The last depth is retained. It never jumps out of a cut halfway through.
   phase** until the spindle reaches the retained axis registration (at most one
   revolution). A newly armed feed follows immediately, subject to step resolution.
   Low-speed position following is assisted feed; indexed Thread recipes keep
-  G33 phase registration with synchronization margins inside the Z bounds. Profile cycles retain their 30 RPM minimum.
+  G33 phase registration, with all cutting-axis targets inside the Z bounds.
+  Profile cycles no longer impose a minimum RPM.
 - The supported tracking assumption is physically gradual spindle speed change.
   Sudden synthetic stop/reverse tests exercise cancellation; they do not establish
   loaded tracking capability for arbitrary spindle acceleration.
 - Persisted settings include UI pitch, units, operation, depth/start counts, cone
-  ratio and sound. Positions, readout zeros, machining stops and armed state are
-  deliberately not restored after a reboot; establish them again on the machine.
+  ratio and sound. From 0.3.24, settled machine positions, machining stops and
+  axis-disable selections also persist. Native G54 offsets already persist in
+  grblHAL settings; no private display offset is reintroduced. Machine state is
+  committed after 500 ms without a state change while the planner, pulse output
+  and command queues are idle (including an armed cycle waiting at rest).
+  Power loss during motion or before that commit restores the last saved state.
+  Armed operations do not restart at power-on. There is no import of stale
+  positions from the separate original H5 firmware's NVS partition.
 
 ## Bench coverage
 

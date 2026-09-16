@@ -53,6 +53,8 @@
 #define SPINDLE_SYNC_FEED_FORWARD 1
 #define SPINDLE_SYNC_PATH_LIMITS 1
 #define SPINDLE_SYNC_INDEX_ORIGIN 1
+#define SPINDLE_SYNC_INDEX_TIMEOUT_MS 0 // External spindle may be stopped or hand turned.
+#define SPINDLE_SYNC_MAX_RATE_FACTOR 1.0f // Retain physical axis maxima; no extra RPM headroom.
 #define DEFAULT_SPINDLE_SYNC_P_GAIN 0.25f
 #define DEFAULT_SPINDLE_PPR H5_ENCODER_CPR
 

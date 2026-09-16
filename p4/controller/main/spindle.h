@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #pragma once
 #include "grbl/hal.h"
+void h5_spindle_profile(bool enabled);
+float h5_spindle_profile_rpm(void);
 void h5_spindle_init(void);
 void h5_spindle_ready(void);
 void h5_spindle_poll(void);

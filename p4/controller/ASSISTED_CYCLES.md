@@ -5,6 +5,17 @@ Turn/Thread geometry and records its earlier validation. See [OPERATIONS.md](OPE
 for Face, Cut, Ellipse, Gearbox, Cone, Async, parameter edits and the current
 operating limits. See [PORT_PROGRESS.md](PORT_PROGRESS.md) for final regression status.
 
+## Change in 0.3.24: spindle-off startup, retained passes and machine state
+
+Removed the profile minimum RPM, preview-derived ceiling, RPM-window cancellation
+and speed-derived span rejection. Profiles may arm stopped, pause on spindle stop
+and resume/retrace without re-plunging or advancing the depth. Thread retains
+phase registration and actual axis limits; P4 index wait has no timeout. The
+upstream defaults for index timeout and G33 rate headroom are unchanged unless
+explicitly configured. Normal manual override now shares idle jog speed.
+Machine positions, stops and disable selections persist with a 500 ms idle
+commit delay. G54 remains native. See [current semantics](OPERATIONS.md).
+
 ## Change in 0.3.23: restore plunge / Z pass / retract
 
 X reaches pass depth before phase wait and the native G33 Z pass, then retracts

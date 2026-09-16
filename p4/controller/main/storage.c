@@ -20,6 +20,62 @@ static bool ready, valid, dirty;
 static uint32_t changed_at, writes, failures;
 static h5_preferences_t preferences;
 static portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
+typedef struct {
+    uint32_t version;
+    int32_t position[3], limits[4];
+    uint32_t disabled;
+} machine_state_t;
+static machine_state_t machine = {.version = 1,
+    .limits = {INT32_MIN, INT32_MAX, INT32_MIN, INT32_MAX}};
+static bool machine_valid, machine_dirty, position_restored;
+static uint32_t machine_changed_at, machine_generation;
+static void machine_changed(void)
+{
+    machine_dirty = true;
+    machine_changed_at = xTaskGetTickCount();
+    machine_generation++;
+}
+void h5_saved_limits_get(int32_t limits[4])
+{
+    h5_critical_enter(&lock, 5000 + __LINE__);
+    memcpy(limits, machine.limits, sizeof(machine.limits));
+    h5_critical_exit(&lock);
+}
+void h5_saved_limits_set(const int32_t limits[4])
+{
+    h5_critical_enter(&lock, 5000 + __LINE__);
+    if (memcmp(limits, machine.limits, sizeof(machine.limits))) {
+        memcpy(machine.limits, limits, sizeof(machine.limits));
+        machine_changed();
+    }
+    h5_critical_exit(&lock);
+}
+uint8_t h5_saved_disabled_get(void)
+{
+    h5_critical_enter(&lock, 5000 + __LINE__);
+    uint8_t mask = machine.disabled;
+    h5_critical_exit(&lock);
+    return mask;
+}
+void h5_saved_disabled_set(uint8_t mask)
+{
+    h5_critical_enter(&lock, 5000 + __LINE__);
+    if (machine.disabled != (mask & 5)) {
+        machine.disabled = mask & 5;
+        machine_changed();
+    }
+    h5_critical_exit(&lock);
+}
+bool h5_storage_restore_position(int32_t (*position)[N_AXIS])
+{
+    // Called by the core once at cold startup, before parser/planner sync.
+    if (machine_valid) {
+        (*position)[X_AXIS] = machine.position[0];
+        (*position)[Z_AXIS] = machine.position[2];
+    }
+    position_restored = true;
+    return machine_valid;
+}
 static bool valid_preferences(const h5_preferences_t *p)
 {
     return p->version == 1 && p->mode >= 0 && p->mode <= 8 && p->mode != 1 && p->measure >= 0 &&
@@ -43,6 +99,13 @@ void h5_storage_init(void)
     size_t size = sizeof(preferences);
     valid = nvs_get_blob(handle, "ui_v1", &preferences, &size) == ESP_OK && size == sizeof(preferences) &&
             valid_preferences(&preferences);
+    machine_state_t saved;
+    size = sizeof(saved);
+    machine_valid = nvs_get_blob(handle, "machine_v1", &saved, &size) == ESP_OK &&
+                    size == sizeof(saved) && saved.version == 1 && !(saved.disabled & ~5U) &&
+                    saved.position[1] == 0;
+    if (machine_valid)
+        machine = saved;
 }
 bool h5_preferences_get(h5_preferences_t *p)
 {
@@ -69,7 +132,7 @@ static bool flash_idle(void)
 {
     return !h5_update_active() &&
            (!sys.driver_started || (state_get() == STATE_IDLE && h5_motion_idle() && !st_is_stepping() &&
-                                    !plan_get_current_block() && !h5_cycle_busy()));
+                                    !plan_get_current_block()));
 }
 static bool read_core(uint8_t *data)
 {
@@ -132,6 +195,30 @@ void h5_storage_poll(void)
 {
     if (!ready || !flash_idle() || !h5_bridge_empty() || h5_serial_pending())
         return;
+    // The core task is the only motion owner. Sample settled positions here,
+    // never from an older UI snapshot, and do no flash writes during motion.
+    machine_state_t snapshot;
+    uint32_t machine_gen;
+    h5_critical_enter(&lock, 5000 + __LINE__);
+    if (position_restored && sys.driver_started &&
+        (!machine_valid || memcmp(machine.position, sys.position, sizeof(machine.position)))) {
+        memcpy(machine.position, sys.position, sizeof(machine.position));
+        machine_valid = true;
+        machine_changed();
+    }
+    bool save_machine = machine_valid && machine_dirty &&
+                        xTaskGetTickCount() - machine_changed_at >= pdMS_TO_TICKS(500);
+    snapshot = machine;
+    machine_gen = machine_generation;
+    h5_critical_exit(&lock);
+    if (save_machine) {
+        if (nvs_set_blob(handle, "machine_v1", &snapshot, sizeof(snapshot)) == ESP_OK && nvs_commit(handle) == ESP_OK) {
+            writes++;
+            h5_critical_enter(&lock, 5000 + __LINE__);
+            if (machine_gen == machine_generation) machine_dirty = false;
+            h5_critical_exit(&lock);
+        } else failures++;
+    }
     h5_preferences_t p;
     uint32_t generation;
     h5_critical_enter(&lock, 5000 + __LINE__);
@@ -159,7 +246,7 @@ status_code_t h5_storage_command(sys_state_t state, char *line)
     snprintf(text, sizeof(text),
              "[P4STORE:READY:%u|DIRTY:%u|WRITES:%lu|FAILURES:%lu|UI_VERSION:%lu|PITCH:%ld|PASSES:%ld|STARTS:%"
              "ld]\r\n",
-             ready, dirty, (unsigned long)writes, (unsigned long)failures, (unsigned long)preferences.version,
+             ready, dirty || machine_dirty, (unsigned long)writes, (unsigned long)failures, (unsigned long)preferences.version,
              (long)preferences.pitch, (long)preferences.passes, (long)preferences.starts);
     hal.stream.write(text);
     return Status_OK;

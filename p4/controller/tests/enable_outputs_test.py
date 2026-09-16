@@ -51,6 +51,8 @@ static void protocol_enqueue_realtime_command(unsigned command)
 static unsigned nesting, writes, pins[64], GPIO;
 static void irq_disable(void) { nesting++; }
 static void irq_enable(void) { assert(nesting); nesting--; }
+static uint8_t saved_disabled;
+static void h5_saved_disabled_set(uint8_t mask) { saved_disabled=mask; }
 static void gpio_ll_set_level(unsigned *gpio, unsigned pin, unsigned value)
 { (void)gpio; assert(nesting); assert(pin==47 || pin==30); assert(value<=1);pins[pin]=value;writes++; }
 CALLBACK
@@ -110,6 +112,7 @@ int main(void)
     timer_active=stepping=planner_active=cycle_active=true;
     enable((axes_signals_t){.mask=5},false);
     h5_axis_set_disabled('X',true);
+    assert(saved_disabled & X_AXIS_BIT);
     assert(h5_axis_change_pending() && !disabled_applied);
     axis_enable_poll();
     assert(stops==1 && cancels==1 && brakes==1 && !disabled_applied);

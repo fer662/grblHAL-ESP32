@@ -19,6 +19,7 @@ harness = r'''
 #include <string>
 #include <vector>
 #include "preferences.h"
+#include "jog_rate.h"
 using String = std::string;
 struct Axis {char name; long motorSteps, screwPitch, pos=0, leftStop=LONG_MAX, rightStop=LONG_MIN; bool disabled=false;};
 Axis x={'X',1200,10000}, z={'Z',400,20000};

@@ -78,7 +78,7 @@ void h5_serial_poll(void)
             h5_cycle_cancel(); continue;
         }
         if (h5_cycle_busy() && (c == CMD_CYCLE_START || c == CMD_CYCLE_START_LEGACY)) continue;
-        if(c==CMD_RESET && h5_follow_busy()) h5_follow_cancel();
+        if(c==CMD_RESET && h5_cycle_busy()) h5_cycle_cancel();
         if (realtime(c)) continue;
         // A cycle owns the parser. Reject competing USB lines immediately;
         // never save them to execute unexpectedly after a cycle finishes.
