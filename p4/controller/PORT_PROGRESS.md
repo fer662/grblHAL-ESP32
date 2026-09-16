@@ -6,7 +6,7 @@ Earlier acceptance used a disconnected Waveshare P4 with enables locked. The
 0.3.3 main build enables normal axis controls for the operator-requested first
 unloaded Z test; installation status and remaining checks are recorded below.
 
-## 0.3.26 Thread phase wait before plunge (built; not installed)
+## 0.3.26 Thread phase wait before plunge (OTA uploaded; boot confirmation pending)
 
 Replaces the post-plunge two-index wait with a phase-gated native X/Z pair. X
 plunge duration and Z acceleration phase advance determine the acquisition phase
@@ -30,7 +30,13 @@ measured about 5–11 ms in simulation; no second index wait. Phase displacement
 handoff stayed below 0.020 mm and steady-region error below 0.010 mm across the
 suite. Profile lifecycle/emitter, preview, enables, cancellation, index wait and
 existing native G33 regressions (including `--without-preload`) passed. ESP32-P4 build 0.3.26 passed with 22% OTA
-space free. No installation or physical lathe motion test performed.
+space free. No physical lathe motion test performed.
+
+The tablet at `10.0.0.110` accepted and verified the 0.3.26 application upload,
+then initiated restart. Its HTTP service responds, but diagnostics returns 403
+until the operator opens Diagnostics locally; running-version/boot acceptance
+confirmation is pending. No remote motion commands sent.
+Application SHA-256: `921ea3f8d865fa5daa0f95ec001f9d951fff0ba99a43baafc9d06ae719166556`.
 
 ## 0.3.25 reduce X acceleration (OTA uploaded; boot confirmation pending)
 
