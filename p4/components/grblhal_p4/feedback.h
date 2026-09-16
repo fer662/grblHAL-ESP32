@@ -6,3 +6,8 @@ void p4_feedback_init(void);
 void p4_feedback_read(int *x_pulses, int *z_pulses, int *encoder);
 
 int32_t p4_encoder_count(void);
+
+// Disconnected bench only: drives A/B GPIOs; requires P4_BENCH_ONLY.
+#if P4_BENCH_ONLY
+bool p4_feedback_selftest(void);
+#endif

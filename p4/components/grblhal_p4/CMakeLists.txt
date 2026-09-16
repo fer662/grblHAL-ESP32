@@ -1,4 +1,8 @@
-set(CORE_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../main")
+if(GRBLHAL_CORE_ROOT)
+    set(CORE_ROOT "${GRBLHAL_CORE_ROOT}")
+else()
+    set(CORE_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../main")
+endif()
 set(CORE_SOURCES
     "${CORE_ROOT}/grbl/grbllib.c"
     "${CORE_ROOT}/grbl/canbus.c"
@@ -53,17 +57,22 @@ set(CORE_SOURCES
 if(NOT IDF_TARGET STREQUAL "esp32p4")
     message(FATAL_ERROR "grblhal_p4 requires IDF_TARGET=esp32p4")
 endif()
+set(SERVICE_SOURCES)
+if(NOT GRBLHAL_P4_CUSTOM_SERVICES)
+    list(APPEND SERVICE_SOURCES default_services.c serial.c storage.c spindle.c)
+endif()
 idf_component_register(
-    SRCS driver.c serial.c storage.c feedback.c spindle.c fpu_isr.c fpu_isr.S ${CORE_SOURCES}
+    SRCS driver.c feedback.c fpu_isr.c fpu_isr.S ${SERVICE_SOURCES} ${CORE_SOURCES}
     LDFRAGMENTS "motion.lf"
     INCLUDE_DIRS "." "${CORE_ROOT}" "../../boards"
     REQUIRES nvs_flash esp_driver_gpio esp_driver_uart esp_driver_gptimer esp_driver_pcnt esp_timer esp_hw_support)
 if(NOT GRBLHAL_P4_CONFIG_HEADER OR NOT EXISTS "${GRBLHAL_P4_CONFIG_HEADER}")
     message(FATAL_ERROR "Set GRBLHAL_P4_CONFIG_HEADER to your application machine.h")
 endif()
-target_compile_definitions(${COMPONENT_LIB} PUBLIC GRBL_ESP32 P4_BENCH_ONLY=$<BOOL:${P4_BENCH_ONLY}>)
-target_compile_options(${COMPONENT_LIB} PRIVATE
+target_compile_definitions(${COMPONENT_LIB} PUBLIC GRBL_ESP32 P4_BENCH_ONLY=$<BOOL:${P4_BENCH_ONLY}> GRBLHAL_P4_CUSTOM_SERVICES=$<BOOL:${GRBLHAL_P4_CUSTOM_SERVICES}>)
+target_compile_options(${COMPONENT_LIB} PUBLIC
     "$<$<COMPILE_LANGUAGE:C>:-include${GRBLHAL_P4_CONFIG_HEADER}>"
+    PRIVATE
     -Wno-missing-field-initializers -Wno-implicit-fallthrough)
 # Pinned upstream Modbus diagnostics use %u for uint32_t. On RV32 both are
 # 32-bit, but GCC distinguishes unsigned int from unsigned long. Keep the warning

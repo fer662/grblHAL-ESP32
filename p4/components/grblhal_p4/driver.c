@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * P4-specific HAL. Upstream grblHAL owns planning, interpolation and state.
- * Extracted from the H5 prototype; application services remain outside the HAL.
+ * Application services are supplied through p4_driver_hooks_t.
  * Normal grblHAL enable control; the example defaults to locked motor enables.
  */
 #include "freertos/FreeRTOS.h"
@@ -19,14 +19,23 @@
 #include "grbl/protocol.h"
 #include "grbl/state_machine.h"
 #include "grbl/task.h"
-#include "serial.h"
 #include "feedback.h"
 #include "fpu_isr.h"
-#include "spindle.h"
-#include "storage.h"
 #include "p4_driver.h"
 
 
+#if !GRBLHAL_P4_CUSTOM_SERVICES
+extern const p4_driver_hooks_t *p4_default_driver_hooks(void);
+#endif
+static p4_driver_hooks_t hooks;
+static bool configured, initialized;
+bool p4_driver_configure(const p4_driver_hooks_t *value)
+{
+    if (initialized || !value || !value->initialize) return false;
+    hooks = *value;
+    configured = true;
+    return true;
+}
 static gptimer_handle_t step_timer, pulse_timer;
 static esp_ldo_channel_handle_t io_ldo;
 static portMUX_TYPE core_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -36,6 +45,8 @@ static on_unknown_sys_command_ptr previous_command;
 static delay_callback_ptr delayed_callback;
 static volatile bool running, fault;
 static volatile bool outputs_ready;
+static uint8_t disabled_axes;
+static axes_signals_t enables_requested;
 static axes_signals_t enable_invert = {.mask = DEFAULT_ENABLE_SIGNALS_INVERT_MASK};
 bool p4_motor_controls_enabled(void) { return !P4_BENCH_ONLY; }
 static volatile unsigned pulse_phase; // 0 idle, 1 direction setup, 2 pulse high, 3 hold
@@ -88,15 +99,26 @@ static void IRAM_ATTR steps_write(uint8_t mask)
 static void IRAM_ATTR enable(axes_signals_t axes, bool hold)
 {
     irq_disable();
+    enables_requested = axes;
     if (P4_BENCH_ONLY || fault || !outputs_ready) {
         gpio_ll_set_level(&GPIO, P4_X_ENABLE, P4_X_ENABLE_OFF);
         gpio_ll_set_level(&GPIO, P4_Z_ENABLE, P4_Z_ENABLE_OFF);
     } else {
+        axes.mask &= ~disabled_axes;
         axes.mask ^= enable_invert.mask;
         gpio_ll_set_level(&GPIO, P4_X_ENABLE, axes.x);
         gpio_ll_set_level(&GPIO, P4_Z_ENABLE, axes.z);
     }
     irq_enable();
+}
+bool p4_set_disabled_axes(uint8_t mask)
+{
+    irq_disable();
+    if (!p4_motion_idle()) { irq_enable(); return false; }
+    disabled_axes = mask & (X_AXIS_BIT | Z_AXIS_BIT);
+    enable(enables_requested, true);
+    irq_enable();
+    return true;
 }
 static void IRAM_ATTR reset_direction(void)
 {
@@ -106,7 +128,7 @@ static void IRAM_ATTR reset_direction(void)
 }
 static void IRAM_ATTR idle(bool clear)
 {
-    p4_spindle_idle();
+    if (hooks.on_idle) hooks.on_idle();
     irq_disable();
     if (running) {
         running = false;
@@ -155,6 +177,7 @@ static void IRAM_ATTR assert_pulse(void)
         diag.z_pulses++;
         diag.z_position += (gpio_ll_get_level(&GPIO, P4_Z_DIR) ^ direction_invert.z) ? -1 : 1;
     }
+    if (hooks.on_step) hooks.on_step(pending_steps);
     pulse_phase = 2;
     schedule_pulse(pulse_ticks);
 }
@@ -182,8 +205,8 @@ static bool IRAM_ATTR pulse_alarm(gptimer_handle_t timer, const gptimer_alarm_ev
 static void IRAM_ATTR pulse_start(stepper_t *stepper)
 {
     if (fault) return;
-    p4_spindle_block(stepper);
-    if (stepper->step_out.y) { p4_motion_fault(); return; }
+    if (hooks.on_block) hooks.on_block(stepper);
+    if (stepper->step_out.y || (stepper->step_out.mask & disabled_axes)) { p4_motion_fault(); return; }
     if (pulse_phase && (stepper->step_out.mask || stepper->dir_changed.mask)) {
         diag.overlaps++;
         p4_motion_fault();
@@ -256,7 +279,9 @@ static bool IRAM_ATTR step_alarm(gptimer_handle_t timer, const gptimer_alarm_eve
 }
 static void wake(void)
 {
+    if (hooks.motion_allowed && !hooks.motion_allowed()) { p4_motion_fault(); return; }
     if (fault || running) return;
+    if (hooks.on_wake) hooks.on_wake();
     outputs_ready = true; // Driver setup and the FPU check completed before motion.
     enable((axes_signals_t){AXES_BITMASK}, false);
     ESP_ERROR_CHECK(gptimer_set_raw_count(step_timer, 0));
@@ -271,7 +296,7 @@ static void limits_enable(bool on, axes_signals_t axes) { }
 static control_signals_t controls(void) { return (control_signals_t){.motor_fault = fault}; }
 static coolant_state_t coolant_get(void) { return (coolant_state_t){0}; }
 static void coolant_set(coolant_state_t state) { }
-static uint32_t ticks_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
+static uint32_t IRAM_ATTR ticks_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
 static uint64_t micros(void) { return esp_timer_get_time(); }
 static void delayed(void *arg)
 {
@@ -291,15 +316,14 @@ static void delay_ms(uint32_t ms, delay_callback_ptr callback)
 static void realtime(sys_state_t state)
 {
     if (previous_realtime) previous_realtime(state);
-    p4_serial_poll();
-    p4_spindle_poll();
-    outputs_ready = !fault;
+    if (hooks.realtime) hooks.realtime(state);
+    outputs_ready = !fault && (!hooks.motion_allowed || hooks.motion_allowed());
     if (!outputs_ready) enable((axes_signals_t){0}, false);
     // Let the idle task and UART worker run while the core waits for input.
     // Pulse timing belongs solely to the hardware timers, never this delay.
     static uint32_t yielded;
     uint32_t now = ticks_ms();
-    if (now != yielded && !p4_spindle_near_index()) { yielded = now; vTaskDelay(1); }
+    if (now != yielded && (!hooks.busy_wait || !hooks.busy_wait())) { yielded = now; vTaskDelay(1); }
 }
 static void settings_changed(settings_t *s, settings_changed_flags_t changed)
 {
@@ -313,6 +337,10 @@ static void settings_changed(settings_t *s, settings_changed_flags_t changed)
 }
 static status_code_t command(sys_state_t state, char *line)
 {
+    if (hooks.command) {
+        status_code_t result = hooks.command(state, line);
+        if (result != Status_Unhandled) return result;
+    }
     if (strcmp(line, "P4FPUTEST") == 0) {
         if (state != STATE_IDLE || running || pulse_phase) return Status_IdleError;
         bool ok = p4_fpu_test();
@@ -374,14 +402,33 @@ static status_code_t command(sys_state_t state, char *line)
     char text[480];
     snprintf(text, sizeof(text), "[P4:%s|EN:%s|NVS:%s|SYNC:%s|X:%lu,%ld,%d|Z:%lu,%ld,%d|ENC:%d|ISR:%lu|OVERLAP:%lu|LATE:%lu|PERIOD:%lu,%lu|PULSE:%lu,%lu|ISR_US:%lu|RX_OVF:%u|FAULT:%u|ENABLE_PINS:%u,%u]\r\n",
         P4_BENCH_ONLY?"BENCH":"MACHINE", P4_BENCH_ONLY?"LOCKED":"CONTROLLED",
-        p4_storage_ready()?"FLASH":"RAM", "ENCODER", (unsigned long)xp, (long)xpos, x, (unsigned long)zp, (long)zpos, z, encoder,
+        (hooks.storage_ready && hooks.storage_ready())?"FLASH":"RAM", "ENCODER", (unsigned long)xp, (long)xpos, x, (unsigned long)zp, (long)zpos, z, encoder,
         (unsigned long)n, (unsigned long)overlap, (unsigned long)late, (unsigned long)min, (unsigned long)max,
-        (unsigned long)pmin, (unsigned long)pmax, (unsigned long)cost, p4_serial_overflows(), fault, gpio_get_level(P4_X_ENABLE), gpio_get_level(P4_Z_ENABLE));
+        (unsigned long)pmin, (unsigned long)pmax, (unsigned long)cost, (hooks.rx_overflows ? hooks.rx_overflows() : 0), fault, gpio_get_level(P4_X_ENABLE), gpio_get_level(P4_Z_ENABLE));
     hal.stream.write(text);
     return Status_OK;
 }
+void p4_driver_snapshot(p4_driver_diagnostics_t *s)
+{
+    int x_counted, z_counted, encoder;
+    p4_feedback_read(&x_counted, &z_counted, &encoder);
+    s->x_counted = x_counted; s->z_counted = z_counted;
+    irq_disable();
+    s->x_pulses = diag.x_pulses; s->z_pulses = diag.z_pulses;
+    s->isr_us = diag.max_isr_us;
+    s->pulse_min = diag.pulse_min; s->pulse_max = diag.pulse_max;
+    s->late = diag.late; s->overlap = diag.overlaps; s->fault = fault;
+    s->deadline_kind = diag.deadline_kind; s->deadline_elapsed = diag.deadline_elapsed;
+    s->deadline_period = diag.deadline_period; s->deadline_counter = diag.deadline_counter;
+    irq_enable();
+    s->enable_x = gpio_get_level(P4_X_ENABLE); s->enable_z = gpio_get_level(P4_Z_ENABLE);
+}
 static status_code_t validate(modal_groups_t *commands, parser_state_t *state, parser_block_t *block, spindle_t *spindle)
 {
+    if (hooks.validate) {
+        status_code_t result = hooks.validate(commands, state, block, spindle);
+        if (result != Status_Unhandled) return result;
+    }
     // Core uses three-axis storage; an absent Y must not silently move virtually.
     if (block->words.y || block->words.v) {
         hal.stream.write("[MSG:P4 has no Y axis]\r\n");
@@ -412,7 +459,7 @@ static bool setup(settings_t *s)
     gpio_set_level(P4_Z_DIR, direction_invert.z);
     ESP_ERROR_CHECK(gpio_config(&outputs));
     p4_feedback_init();
-    p4_spindle_ready();
+    if (hooks.feedback_ready) hooks.feedback_ready();
     gptimer_config_t timer = {.clk_src = GPTIMER_CLK_SRC_DEFAULT, .direction = GPTIMER_COUNT_UP,
         .resolution_hz = P4_STEP_HZ, .intr_priority = 3};
     ESP_ERROR_CHECK(gptimer_new_timer(&timer, &step_timer));
@@ -425,10 +472,15 @@ static bool setup(settings_t *s)
     ESP_ERROR_CHECK(gptimer_start(pulse_timer));
     // Fail closed if this SDK/toolchain does not preserve interrupted FP state.
     if (!p4_fpu_test()) { p4_motion_fault(); return false; }
-    return s->version.id == SETTINGS_VERSION;
+    return s->version.id == SETTINGS_VERSION && (!hooks.setup || hooks.setup(s));
 }
 bool driver_init(void)
 {
+#if !GRBLHAL_P4_CUSTOM_SERVICES
+    if (!configured && !p4_driver_configure(p4_default_driver_hooks())) return false;
+#endif
+    if (!configured) return false;
+    initialized = true;
     hal.info = "ESP32-P4";
     hal.driver_version = "260914";
     hal.driver_options = P4_BENCH_ONLY ? "BENCH_ONLY,GPTIMER,PCNT" : "AXIS_CONTROL,GPTIMER,PCNT";
@@ -458,7 +510,6 @@ bool driver_init(void)
     hal.coolant.set_state = coolant_set;
     hal.driver_cap.amass_level = 3;
     hal.driver_cap.step_pulse_delay = 1;
-    p4_storage_hal();
     previous_realtime = grbl.on_execute_realtime;
     grbl.on_execute_realtime = realtime;
     previous_settings = grbl.on_settings_changed;
@@ -466,6 +517,5 @@ bool driver_init(void)
     previous_command = grbl.on_unknown_sys_command;
     grbl.on_unknown_sys_command = command;
     grbl.on_pre_gcode_execute = validate;
-    p4_spindle_init();
-    return p4_serial_init() && hal.version == 10;
+    return hooks.initialize() && hal.version == 10;
 }

@@ -45,6 +45,51 @@ void p4_feedback_read(int *x_pulses, int *z_pulses, int *encoder)
     ESP_ERROR_CHECK(pcnt_unit_get_count(spindle_counter, encoder));
 }
 
+#if P4_BENCH_ONLY
+static void encoder_edge(int pin, int level)
+{
+    gpio_set_level(pin, level);
+    esp_rom_delay_us(2);
+}
+static void revolutions(bool forward)
+{
+    // 16000 quadrature cycles = 32000 counts, crossing the 30000 limit.
+    for (unsigned i = 0; i < 16000; i++) {
+        if (forward) {
+            encoder_edge(P4_ENCODER_B, 1);
+            encoder_edge(P4_ENCODER_A, 1);
+            encoder_edge(P4_ENCODER_B, 0);
+            encoder_edge(P4_ENCODER_A, 0);
+        } else {
+            encoder_edge(P4_ENCODER_A, 1);
+            encoder_edge(P4_ENCODER_B, 1);
+            encoder_edge(P4_ENCODER_A, 0);
+            encoder_edge(P4_ENCODER_B, 0);
+        }
+    }
+}
+bool p4_feedback_selftest(void)
+{
+    gpio_set_level(P4_ENCODER_A, 0);
+    gpio_set_level(P4_ENCODER_B, 0);
+    ESP_ERROR_CHECK(gpio_set_direction(P4_ENCODER_A, GPIO_MODE_INPUT_OUTPUT));
+    ESP_ERROR_CHECK(gpio_set_direction(P4_ENCODER_B, GPIO_MODE_INPUT_OUTPUT));
+    esp_rom_delay_us(10);
+    int start, forward, reverse, final;
+    ESP_ERROR_CHECK(pcnt_unit_get_count(spindle_counter, &start));
+    revolutions(true);
+    ESP_ERROR_CHECK(pcnt_unit_get_count(spindle_counter, &forward));
+    revolutions(false);
+    revolutions(false);
+    ESP_ERROR_CHECK(pcnt_unit_get_count(spindle_counter, &reverse));
+    revolutions(true);
+    ESP_ERROR_CHECK(pcnt_unit_get_count(spindle_counter, &final));
+    ESP_ERROR_CHECK(gpio_set_direction(P4_ENCODER_A, GPIO_MODE_INPUT));
+    ESP_ERROR_CHECK(gpio_set_direction(P4_ENCODER_B, GPIO_MODE_INPUT));
+    return forward - start == 32000 && reverse - start == -32000 && final == start;
+}
+
+#endif
 int32_t IRAM_ATTR p4_encoder_count(void)
 {
     int count = 0;

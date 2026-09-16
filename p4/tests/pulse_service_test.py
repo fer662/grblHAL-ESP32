@@ -70,7 +70,16 @@ static uint32_t pulse_ticks = 100, direction_ticks = 50, tick_period = 10000;
 static uint64_t pulse_started;
 static uint8_t direction;
 static axes_signals_t step_invert, direction_invert, pending_steps;
-static axes_signals_t enable_invert = {.mask=1};
+static axes_signals_t enable_invert = {.mask=1}, enables_requested;
+static uint8_t disabled_axes;
+static bool p4_motion_idle(void) { return !running && !pulse_phase; }
+static unsigned step_hook_calls;
+static void step_hook(axes_signals_t steps) { assert(steps.mask); step_hook_calls++; }
+static struct {
+    void (*on_idle)(void);
+    void (*on_block)(stepper_t *);
+    void (*on_step)(axes_signals_t);
+} hooks = {p4_spindle_idle, p4_spindle_block, step_hook};
 typedef struct { unsigned count; } pulse_trace_t;
 static pulse_trace_t trace_x, trace_z;
 static void trace_edge(pulse_trace_t *trace, uint64_t time) { (void)time; trace->count++; }
@@ -82,6 +91,7 @@ harness += '\n' + source[a:b] + '\n'
 for signature in [
     'static void IRAM_ATTR steps_write(',
     'static void IRAM_ATTR enable(',
+    'bool p4_set_disabled_axes(',
     'static void IRAM_ATTR reset_direction(',
     'static void IRAM_ATTR idle(',
     'void IRAM_ATTR p4_motion_fault(',
@@ -99,7 +109,7 @@ static void reset(void)
     memset((void *)&diag, 0, sizeof(diag));
     fault = running = outputs_ready = reset_after_pulse = false;
     pulse_phase = alarm_code = timer_stops = 0;
-    direction = 0; now = 1000;
+    direction = disabled_axes = step_hook_calls = 0; now = 1000;
     step_invert.mask = direction_invert.mask = 0;
     enable_invert.mask = 1;
 }
@@ -115,6 +125,13 @@ int main(void)
     enable((axes_signals_t){.mask=0}, false);
     assert(gpio[P4_X_ENABLE] == 1 && gpio[P4_Z_ENABLE] == 0);
 
+    assert(p4_set_disabled_axes(X_AXIS_BIT));
+    enable((axes_signals_t){.mask=5}, false);
+    assert(gpio[P4_X_ENABLE] == 1);
+    assert(gpio[P4_Z_ENABLE] == (P4_BENCH_ONLY ? 0 : 1));
+    running = true;
+    assert(!p4_set_disabled_axes(0) && disabled_axes == X_AXIS_BIT);
+
     reset(); running = true;
     stepper_t step = {.step_out.mask=1, .dir_out.mask=1, .dir_changed.mask=1};
     pulse_start(&step);
@@ -124,7 +141,7 @@ int main(void)
     now += direction_ticks;
     pulse_alarm(pulse_timer, 0, 0);
     assert(pulse_phase == 2 && gpio[P4_X_STEP] == 1);
-    assert(diag.x_pulses == 1 && diag.x_position == -1);
+    assert(diag.x_pulses == 1 && diag.x_position == -1 && step_hook_calls == 1);
     idle(true);
     assert(!running && timer_stops == 1 && reset_after_pulse);
     assert(gpio[P4_X_STEP] == 1 && gpio[P4_X_DIR] == 1);
