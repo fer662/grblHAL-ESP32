@@ -10,6 +10,8 @@ extern "C" {
 typedef struct {
     int32_t position[3];
     float steps_per_mm[3];
+    float work_offset[3]; // Core WCS + G92 + tool offset, in machine mm.
+    uint8_t work_system; // Core coordinate-system ID: 0 = G54.
     float max_rate[3], acceleration[3];
     float rpm;
     uint32_t command_id, completed_id, stream_generation;

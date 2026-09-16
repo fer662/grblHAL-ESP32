@@ -6,6 +6,20 @@ Earlier acceptance used a disconnected Waveshare P4 with enables locked. The
 0.3.3 main build enables normal axis controls for the operator-requested first
 unloaded Z test; installation status and remaining checks are recorded below.
 
+## 0.3.17 work-coordinate integration (built; not installed)
+
+Removed the UI-local origin. X0/Z0 submit a core-thread idle-guarded native
+G54/G10 L20 request. Core WCO and active WCS now drive all coordinate displays
+and limit editing. Machine endpoints and assisted motion generation are unchanged.
+The editor rejects stale coordinate frames; preview preparation waits for commands.
+
+Validation: ESP32-P4 application build; host zero-gate and UI request/ACK tests;
+metric/inch conversion and preview regressions; assisted geometry/emitter,
+cancellation and enable-output tests; production LVGL touch/editor and layout
+checks. Native G10 semantics are supplied by the pinned core; the new host gate
+test uses a parser spy, not a complete grblHAL emulator. No on-lathe commands or
+OTA installation were performed for this change.
+
 ## Implemented
 
 - [x] Native grblHAL motion, accelerated jog, hold/resume, cancellation and reset.

@@ -31,6 +31,8 @@ void h5_ui_sync();
 void h5_ui_jog(Axis *a, int sign, bool pressed);
 void h5_ui_show_update();
 bool h5_ui_limits_editable();
+const char *h5_ui_work_system();
+double h5_ui_work_offset(Axis *axis);
 bool h5_ui_set_jog_limits(bool enabled);
 double h5_ui_limit_coordinate(Axis *axis, long steps);
 bool h5_ui_limit_steps(Axis *axis, double coordinate, long *steps);

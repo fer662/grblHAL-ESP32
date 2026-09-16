@@ -16,6 +16,9 @@ private:
   std::array<long, 4> draft;
   std::unique_ptr<Numpad> keypad;
   int editMeasure = 0;
+  std::array<double, 2> editOffset{};
+  String editSystem;
+  bool coordinatesUnchanged();
   void refresh();
   void enterValue(unsigned index);
   void useCurrent(unsigned index);

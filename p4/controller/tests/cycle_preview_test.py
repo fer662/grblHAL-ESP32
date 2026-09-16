@@ -14,10 +14,12 @@ harness = r'''
 #include <cstdio>
 #include <cstring>
 #include <string>
-struct Axis { long originPos=0; } x,z;
+struct Axis {} x,z;
+static double work_offset[3];
+static double h5_ui_work_offset(Axis *a) { return work_offset[a==&x ? 0 : 2]; }
+static const char *h5_ui_work_system() { return "G54"; }
 static constexpr int MEASURE_METRIC=0;
 static int measure=MEASURE_METRIC;
-static float steps_mm(Axis *axis) { return axis==&x ? 1200 : 200; }
 FORMATTER
 int main() {
     h5_cycle_config_t c={};
@@ -25,7 +27,7 @@ int main() {
     c.x_min=0;c.x_max=1;c.z_min=-1.5;c.z_max=8.5;c.rpm_limit=500;
     h5_cycle_machine_t m={0,0,400,50,960,200,25,60,1200};
     h5_cycle_plan_t plan;char error[96],text[1100];
-    z.originPos=300; // Screenshot regression: displayed Z 0..10, machine Z -1.5..8.5.
+    work_offset[2]=-1.5; // Screenshot regression: displayed Z 0..10, machine Z -1.5..8.5.
     assert(h5_cycle_plan(&c,&m,&plan,error,sizeof error));
     const auto saved=plan;
     format_cycle_preview(plan,text,sizeof text);
@@ -34,7 +36,7 @@ int main() {
     assert(strstr(text,"X infeed: 0.000 to 1.000 mm | Retracted: -0.500 mm"));
     assert(strstr(text,"lead 0.1000 mm/rev"));
     assert(strstr(text,"Run-in: 0.000 mm | Run-out: 0.000 mm"));
-    assert(strstr(text,"main-screen zero and units"));
+    assert(strstr(text,"G54 work zero and screen units"));
     assert(!strstr(text,"machine coordinates"));
     assert(!memcmp(&saved,&plan,sizeof plan)); // Presentation must not change motion geometry.
     measure=1;format_cycle_preview(plan,text,sizeof text);
@@ -44,7 +46,7 @@ int main() {
     assert(!strstr(text," mm"));
     assert(!memcmp(&saved,&plan,sizeof plan));
     // Facing swaps the cutting and depth axes; apply each axis's own zero.
-    measure=MEASURE_METRIC;x.originPos=1200;c.operation=H5_FACE;
+    measure=MEASURE_METRIC;work_offset[0]=-1;c.operation=H5_FACE;
     assert(h5_cycle_plan(&c,&m,&plan,error,sizeof error));
     format_cycle_preview(plan,text,sizeof text);
     assert(strstr(text,"X travel bounds: 1.000 to 2.000 mm"));

@@ -379,8 +379,23 @@ extern bool h5_audio_ready(void);
 extern void h5_task_report(void);
 extern void h5_audio_tone(unsigned,unsigned);
 extern status_code_t h5_tmc_command(sys_state_t,char *);
+// Runs only in the core's system-command dispatcher, never from the LVGL task.
+// Recheck here: motion may have been queued after the touchscreen idle sample.
+static status_code_t zero_work_axis(sys_state_t state, char axis)
+{
+    if (axis != 'X' && axis != 'Z') return Status_InvalidStatement;
+    if (state != STATE_IDLE || !h5_motion_idle() || st_is_stepping() ||
+        plan_get_current_block() || h5_cycle_busy() || h5_update_active() ||
+        h5_axis_change_pending() || !h5_ui_ready() || sys.abort || sys.alarm)
+        return Status_IdleError;
+    char block[] = "G54G10L20P1X0";
+    block[sizeof(block) - 3] = axis;
+    return gc_execute_block(block);
+}
 static status_code_t command(sys_state_t state, char *line)
 {
+    if (!strncmp(line, "P4ZERO=", 7))
+        return strlen(line) == 8 ? zero_work_axis(state, line[7]) : Status_InvalidStatement;
     if(!strcmp(line,"P4TASKS")) {h5_task_report();return Status_OK;}
     if(!strcmp(line,"P4AUDIO")) {hal.stream.write(h5_audio_ready()?"[P4AUDIO:READY]\r\n":"[P4AUDIO:UNAVAILABLE]\r\n");h5_audio_tone(1200,70);return Status_OK;}
     status_code_t network_result=h5_network_command(state,line);

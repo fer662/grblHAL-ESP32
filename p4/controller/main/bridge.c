@@ -151,10 +151,12 @@ void h5_bridge_poll(void)
     for (unsigned i = 0; i < 3; i++) s.position[i] = sys.position[i];
     hal.irq_enable();
     for (unsigned i = 0; i < 3; i++) {
+        s.work_offset[i] = gc_get_offset(i, true);
         s.steps_per_mm[i] = settings.axis[i].steps_per_mm;
         s.max_rate[i] = settings.axis[i].max_rate;
         s.acceleration[i] = settings.axis[i].acceleration / 3600.0f;
     }
+    s.work_system = gc_state.modal.g5x_offset.id;
     sys_state_t state = state_get();
     s.ready = sys.driver_started && h5_ui_ready();
     s.moving = state == STATE_CYCLE || state == STATE_JOG || state == STATE_HOMING;

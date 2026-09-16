@@ -16,16 +16,34 @@ The underlying plan and emitted machine-coordinate moves are unchanged.
 Actual LVGL previews: [Turn in mm](docs/turn-cycle-0316.png),
 [Thread in inches](docs/thread-inch-0316.png).
 
-### G53, G54 and the touchscreen zero
+## Change in 0.3.17: native G54 touchscreen zero
 
-The grblHAL core supports G53 (machine coordinates for one motion block) and
-G54/G55/etc. (persistent work-coordinate offsets). The touchscreen X0/Z0 actions
-currently set UI-local `originPos` values, separate from those core offsets.
-Assisted cycles position with G53 and cut with relative G91 moves, so their
-physical targets do not depend on the selected G54/G55 offset. This update only
-changes how their preview is presented; it does not make X0/Z0 program G54.
-Without homing, the current internal machine reference is not a repeatable
-physical machine datum across power cycles.
+X0/Z0 now select G54 and set the selected axis's current work position to zero
+with native `G54 G10 L20 P1 X0` or `Z0`. The UI sends `$P4ZERO=X/Z`; this P4
+system command rechecks idle state, pulse/stepper/planner activity, cycle ownership,
+OTA and axis changes on the core task before calling the native parser. It does
+not move an axis. The other axis's stored G54 offset is retained. If a sender had
+selected another work system, switching back to G54 can change both readouts.
+
+The bridge publishes `gc_get_offset(axis, true)` and the active coordinate-system
+ID. The DRO, saved-limit labels, numeric editor and cycle preview all subtract
+that same core offset, including G92 and tool-length offsets. G54 is the default;
+a sender selecting G55/etc. is reflected in the touchscreen and its coordinate
+label. X remains radial slide travel, including when a sender selects G7.
+There is no separate touchscreen origin. Zeroing waits for a complete post-ACK
+snapshot; an editor opened before a work-zero/unit change must be reopened.
+
+Saved limits stay in machine steps. Changing work zero changes their displayed
+numbers, never their physical positions. Assisted cycles still use G53 for
+absolute positioning and G91 for relative cuts; their paths are unchanged.
+G53 applies machine coordinates to one motion block; G54 selects a work system.
+
+Native G54 offsets persist through grblHAL's settings storage. Without homing,
+the machine reference is not repeatable across power cycles: establish the work
+zero again after power-up. The old volatile touchscreen origins are not migrated.
+
+Actual 0.3.17 LVGL previews: [Turn in mm](docs/turn-cycle-0317.png),
+[Thread in inches](docs/thread-inch-0317.png).
 
 ## Change in 0.3.15: bounded threading
 

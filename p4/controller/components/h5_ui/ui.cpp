@@ -84,14 +84,20 @@ bool h5_ui_set_jog_limits(bool enabled)
     notice = enabled ? "Jog limits enabled" : "Jog limits bypassed; assisted bounds retained";
     return true;
 }
+const char *h5_ui_work_system()
+{
+    static const char *names[] = {"G54", "G55", "G56", "G57", "G58", "G59", "G59.1", "G59.2", "G59.3"};
+    return status.work_system < sizeof(names)/sizeof(names[0]) ? names[status.work_system] : "WCS";
+}
+double h5_ui_work_offset(Axis *a) { return status.work_offset[a == &x ? 0 : 2]; }
 double h5_ui_limit_coordinate(Axis *a, long steps)
 {
-    double mm = ((double)steps + a->originPos) / steps_mm(a);
+    double mm = (double)steps / steps_mm(a) - h5_ui_work_offset(a);
     return measure == MEASURE_METRIC ? mm : mm / 25.4;
 }
 bool h5_ui_limit_steps(Axis *a, double coordinate, long *steps)
 {
-    double raw = coordinate * (measure == MEASURE_METRIC ? 1.0 : 25.4) * steps_mm(a) - a->originPos;
+    double raw = (coordinate * (measure == MEASURE_METRIC ? 1.0 : 25.4) + h5_ui_work_offset(a)) * steps_mm(a);
     if (!std::isfinite(raw) || raw <= INT32_MIN || raw >= INT32_MAX) return false;
     double rounded = round(raw);
     if (rounded <= INT32_MIN || rounded >= INT32_MAX) return false;
@@ -165,8 +171,11 @@ void manualMoveAxis(Axis *a, float mm)
 { jog(a, mm < 0 ? -1 : 1, fabsf(mm), a == &x ? 60 : 960); }
 void markAxis0(Axis *a)
 {
-    if (status.moving || status.held) { notice = "Stop motion before zeroing"; return; }
-    a->originPos = -a->pos;
+    if (!h5_ui_limits_editable()) { notice = "Stop motion and wait for commands before setting G54 zero"; return; }
+    char command[16];
+    snprintf(command, sizeof(command), "$P4ZERO=%c", a->name);
+    send(command);
+    // No optimistic display offset: wait for the core's post-ACK WCO sample.
 }
 void setAxisDisabled(Axis *a, bool disabled)
 {
@@ -184,9 +193,9 @@ static String position_text(Axis *a, long position)
     double mm = position / steps_mm(a);
     return format_decimal(measure == MEASURE_METRIC ? mm : mm / 25.4, 3);
 }
-String getAxisPos(Axis *a) { return position_text(a, a->pos + a->originPos); }
-String getAxisLeftStop(Axis *a) { return a->leftStop == LONG_MAX ? "-" : position_text(a, a->leftStop + a->originPos); }
-String getAxisRightStop(Axis *a) { return a->rightStop == LONG_MIN ? "-" : position_text(a, a->rightStop + a->originPos); }
+String getAxisPos(Axis *a) { return format_decimal(h5_ui_limit_coordinate(a, a->pos), 3); }
+String getAxisLeftStop(Axis *a) { return a->leftStop == LONG_MAX ? "-" : format_decimal(h5_ui_limit_coordinate(a, a->leftStop), 3); }
+String getAxisRightStop(Axis *a) { return a->rightStop == LONG_MIN ? "-" : format_decimal(h5_ui_limit_coordinate(a, a->rightStop), 3); }
 String getAxisStopDiff(Axis *a)
 { return a->leftStop == LONG_MAX || a->rightStop == LONG_MIN ? "-" : position_text(a, a->leftStop - a->rightStop); }
 static void apply_feed_edit()
@@ -216,10 +225,10 @@ static void format_cycle_preview(const h5_cycle_plan_t &plan, char *text, size_t
 {
     const double scale = measure == MEASURE_METRIC ? 1.0 : 1.0 / 25.4;
     const char *unit = measure == MEASURE_METRIC ? "mm" : "in";
-    // Display offsets affect positions only. Lengths and lead only change units.
+    // Core work offsets affect positions only. Lengths and lead only change units.
     auto coordinate = [scale](char axis, double machine_mm) {
         Axis *a = axis == 'X' ? &x : &z;
-        return (machine_mm + (double)a->originPos / steps_mm(a)) * scale;
+        return (machine_mm - h5_ui_work_offset(a)) * scale;
     };
     char thread_region[200] = "";
     if (plan.indexed)
@@ -234,7 +243,7 @@ static void format_cycle_preview(const h5_cycle_plan_t &plan, char *text, size_t
         "%c infeed: %.3f to %.3f %s | Retracted: %.3f %s\n"
         "Run-in: %.3f %s | Run-out: %.3f %s\n%s\n"
         "Keep spindle between 30 and %.0f RPM in the current direction.\n"
-        "Coordinates use the main-screen zero and units; X is slide travel.\n"
+        "Coordinates: %s work zero and screen units; X is slide travel.\n"
         "Cutting-axis travel stays within bounds; clearance retract is separate.\n"
         "STOP decelerates and cancels the pass; it does not resume mid-pass.",
         h5_cycle_name(plan.config.operation),plan.config.passes,plan.starts,plan.lead*scale,unit,
@@ -242,11 +251,11 @@ static void format_cycle_preview(const h5_cycle_plan_t &plan, char *text, size_t
         coordinate(plan.cut_axis,plan.approach),unit,coordinate(plan.cut_axis,plan.finish),unit,
         plan.depth_axis,coordinate(plan.depth_axis,plan.depth_start),coordinate(plan.depth_axis,plan.depth_end),unit,
         coordinate(plan.depth_axis,plan.clearance),unit,
-        plan.lead_in*scale,unit,plan.run_out*scale,unit,thread_region,plan.config.rpm_limit);
+        plan.lead_in*scale,unit,plan.run_out*scale,unit,thread_region,plan.config.rpm_limit,h5_ui_work_system());
 }
 static void preview_cycle()
 {
-    if (status.moving || status.held || status.alarm || !status.ready || h5_cycle_busy()) {
+    if (!h5_ui_limits_editable()) {
         notice = "Stop motion before preparing a cycle"; return;
     }
     if (x.disabled || z.disabled) { notice = "Both axes must be available"; return; }
@@ -385,7 +394,7 @@ void h5_ui_sync()
     if (status_label) {
         String text = status.ready ? status.state : "Starting controller";
         text += h5_motor_controls_enabled() ? "  |  Axis controls enabled" : "  |  Motor outputs disabled";
-        text += "  |  Tap for diagnostics";
+        text += String("  |  ") + h5_ui_work_system() + "  |  Tap for diagnostics";
         if (h5_axis_change_pending()) text += "\nStopping before changing motor enable";
         else if (x.disabled || z.disabled) text += String("\nMotor released:") + (x.disabled?" X":"") + (z.disabled?" Z":"");
         if (!notice.empty()) text += "\n" + notice;

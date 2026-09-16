@@ -10,6 +10,12 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
 ## Current scope
 
+**0.3.17 uses native grblHAL work coordinates throughout the touchscreen.**
+X0/Z0 select G54 and zero that axis using G10 L20 P1. DRO, limit labels/editor,
+and cycle previews read the core's active work offset (including G92/tool offsets).
+Saved limits remain machine positions. No private display origin remains.
+See [coordinate handling](ASSISTED_CYCLES.md).
+
 **0.3.16 makes cycle previews use the main-screen zero and units.** Bounds,
 approach, infeed, retract and thread-region positions now agree with the DRO and
 limit buttons. Distances and lead convert units without adding origin offsets.

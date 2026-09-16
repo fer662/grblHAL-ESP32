@@ -7,6 +7,7 @@ import tempfile
 root = Path(__file__).resolve().parents[1]
 source = (root / 'components/h5_ui/ui.cpp').read_text()
 functions = source[source.index('static void send(const char *line)'):source.index('void manualMoveAxis(')]
+functions += source[source.index('void markAxis0('):source.index('void setAxisDisabled(')]
 harness = r'''
 #include <cassert>
 #include <cmath>
@@ -18,9 +19,9 @@ harness = r'''
 #include <vector>
 #include "preferences.h"
 using String = std::string;
-struct Axis {char name; long motorSteps, screwPitch, pos=0, leftStop=LONG_MAX, rightStop=LONG_MIN, originPos=0; bool disabled=false;};
+struct Axis {char name; long motorSteps, screwPitch, pos=0, leftStop=LONG_MAX, rightStop=LONG_MIN; bool disabled=false;};
 Axis x={'X',1200,10000}, z={'Z',400,20000};
-struct Status {bool ready=true, moving=false, held=false; int alarm=0; uint32_t command_id=0,completed_id=0,sampled_completed_id=0;float steps_per_mm[3]={1200,0,200};long position[3]={0,0,0};};
+struct Status {bool ready=true, moving=false, held=false; int alarm=0; uint32_t command_id=0,completed_id=0,sampled_completed_id=0;float work_offset[3]={};unsigned work_system=0;float steps_per_mm[3]={1200,0,200};long position[3]={0,0,0};};
 static Status status, published;
 static String notice;
 static uint32_t last_command, single_jog_id;
@@ -50,12 +51,40 @@ FUNCTIONS
 static void reset() {
  status=published=Status{};notice.clear();last_command=single_jog_id=next_id=0;
  held_axis=nullptr;continuous_jog=false;jogContinuous=true;moveStep=10000;
- jogLimitsEnabled=true;updating=false;measure=MEASURE_METRIC;x.originPos=z.originPos=0;
+ jogLimitsEnabled=true;updating=false;measure=MEASURE_METRIC;
  follow=axis_pending=false;accept=true;cancels=releases=0;submitted.clear();manual.clear();
  x.pos=z.pos=0;x.leftStop=z.leftStop=LONG_MAX;x.rightStop=z.rightStop=LONG_MIN;x.disabled=z.disabled=false;
 }
 static double distance() {double d=0;assert(!submitted.empty());assert(sscanf(submitted.back().c_str(),"$J=G21G91%*c%lf",&d)==1);return d;}
 int main() {
+ // Zero requests use the core, never an optimistic UI offset or moved endpoints.
+ reset();x.leftStop=1200;x.rightStop=-1200;
+ published.position[0]=600;published.work_offset[0]=.25;
+ markAxis0(&x);assert(submitted.size()==1 && submitted.back()=="$P4ZERO=X");
+ assert(status.work_offset[0]==.25 && x.pos==600 && x.leftStop==1200 && x.rightStop==-1200);
+ markAxis0(&z);assert(submitted.size()==1); // Wait for complete post-ACK sample.
+ published.completed_id=1;markAxis0(&z);assert(submitted.size()==1);
+ published.sampled_completed_id=1;published.work_offset[0]=.5;
+ assert(h5_ui_limits_editable());assert(h5_ui_limit_coordinate(&x,x.pos)==0);
+ markAxis0(&z);assert(submitted.back()=="$P4ZERO=Z");
+ for(unsigned blocked=0;blocked<8;blocked++) {
+  reset();
+  switch(blocked) {
+   case 0: published.moving=true;break;
+   case 1: published.held=true;break;
+   case 2: published.alarm=1;break;
+   case 3: published.ready=false;break;
+   case 4: follow=true;break;
+   case 5: updating=true;break;
+   case 6: axis_pending=true;break;
+   case 7: held_axis=&x;break;
+  }
+  markAxis0(&x);assert(submitted.empty());
+ }
+ reset();published.work_system=1;published.work_offset[2]=2.5;
+ assert(h5_ui_limits_editable());assert(!strcmp(h5_ui_work_system(),"G55"));
+ assert(h5_ui_limit_coordinate(&z,500)==0);
+ assert(x.leftStop==LONG_MAX && z.rightStop==LONG_MIN);
  // Hold is independent of the selected step, including inch increments.
  for(long step:{10000L,1000L,100L,25400L,2540L,254L}) {
   reset();moveStep=step;h5_ui_jog(&x,1,true);assert(distance()==100);
@@ -116,8 +145,8 @@ int main() {
  long invalid[]={3600,2400,-6000,200};assert(h5_ui_apply_limits(invalid));assert(x.rightStop==-1200&&z.leftStop==0);
  published.moving=true;assert(h5_ui_apply_limits(bounds));published.moving=false;
  bounds[0]=LONG_MIN;bounds[1]=LONG_MAX;assert(!h5_ui_apply_limits(bounds));assert(x.rightStop==LONG_MIN&&x.leftStop==LONG_MAX);
- long raw=0;x.originPos=-1200;assert(h5_ui_limit_steps(&x,-2,&raw)&&raw==-1200);assert(h5_ui_limit_coordinate(&x,raw)==-2);
- measure=1;z.originPos=200;assert(h5_ui_limit_steps(&z,-1,&raw)&&raw==-5280);assert(fabs(h5_ui_limit_coordinate(&z,raw)+1)<1e-9);
+ long raw=0;status.work_offset[0]=1;assert(h5_ui_limit_steps(&x,-2,&raw)&&raw==-1200);assert(h5_ui_limit_coordinate(&x,raw)==-2);
+ measure=1;status.work_offset[2]=-1;assert(h5_ui_limit_steps(&z,-1,&raw)&&raw==-5280);assert(fabs(h5_ui_limit_coordinate(&z,raw)+1)<1e-9);
  assert(!h5_ui_limit_steps(&x,INFINITY,&raw)&&!h5_ui_limit_steps(&x,NAN,&raw)&&!h5_ui_limit_steps(&x,1e20,&raw));
 }
 '''.replace('FUNCTIONS', functions)

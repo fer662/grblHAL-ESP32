@@ -16,6 +16,9 @@ long dupr=1000, moveStep=MOVE_STEP_1;
 float coneRatio=.25f;
 PitchType pitchType=PITCH_TYPE_MM_PER_TURN;
 Axis x={'X',1200,10000}, z={'Z',400,20000};
+static double work_offset[3];
+const char *h5_ui_work_system() {return "G54";}
+double h5_ui_work_offset(Axis *a) {return work_offset[a==&x?0:2];}
 struct Jog {char axis; int sign; bool pressed;};
 static std::vector<Jog> jogs;
 extern "C" int64_t esp_timer_get_time() {return (int64_t)lv_tick_get()*1000;}
@@ -31,7 +34,7 @@ void h5_ui_sync() {
         lv_obj_set_style_text_font(status,&lv_font_montserrat_18,0);
         lv_obj_set_style_text_color(status,lv_color_hex(0xFF9800),0);
         lv_obj_set_style_text_align(status,LV_TEXT_ALIGN_CENTER,0);
-        lv_label_set_text(status,"Ready  |  Axis controls enabled  |  Tap for diagnostics");
+        lv_label_set_text(status,"Ready  |  Axis controls enabled  |  G54  |  Tap for diagnostics");
         lv_obj_align(status,LV_ALIGN_BOTTOM_MID,0,-18);
     }
 }
@@ -46,7 +49,7 @@ void setConeRatio(float v) {coneRatio=v;}
 void buttonOnOffPress(bool v) {isOn=v;}
 void buttonMoveStepPress() {moveStep=MOVE_STEP_3;}
 void buttonMeasurePress() {measure=measure==MEASURE_METRIC?MEASURE_INCH:MEASURE_METRIC;}
-void markAxis0(Axis *a) {a->originPos=-a->pos;}
+void markAxis0(Axis *a) {work_offset[a==&x?0:2]=a->pos/(a==&x?1200.0:200.0);}
 void manualMoveAxis(Axis *,float) {}
 void setAxisDisabled(Axis *a,bool v) {a->disabled=v;}
 void setLeftStop(Axis *a,long v) {a->leftStop=v;}
@@ -56,9 +59,9 @@ int getApproxRpm() {return 420;}
 static double steps(Axis *a) {return a==&x?1200:200;}
 bool h5_ui_limits_editable() {return limitsEditable;}
 bool h5_ui_set_jog_limits(bool enabled) {if(!limitsEditable)return false;jogLimitsEnabled=enabled;return true;}
-double h5_ui_limit_coordinate(Axis *a,long value) {double mm=((double)value+a->originPos)/steps(a);return measure==MEASURE_METRIC?mm:mm/25.4;}
+double h5_ui_limit_coordinate(Axis *a,long value) {double mm=(double)value/steps(a)-h5_ui_work_offset(a);return measure==MEASURE_METRIC?mm:mm/25.4;}
 bool h5_ui_limit_steps(Axis *a,double value,long *out) {
-    double raw=value*(measure==MEASURE_METRIC?1:25.4)*steps(a)-a->originPos;
+    double raw=(value*(measure==MEASURE_METRIC?1:25.4)+h5_ui_work_offset(a))*steps(a);
     if(!std::isfinite(raw)||raw<=INT32_MIN||raw>=INT32_MAX)return false;
     *out=lround(raw);return true;
 }
@@ -68,9 +71,9 @@ const char *h5_ui_apply_limits(const long v[4]) {
     if(v[2]!=LONG_MIN&&v[3]!=LONG_MAX&&v[2]>=v[3])return "Z- must be less than Z+. Clear an endpoint to leave it unset.";
     x.rightStop=v[0];x.leftStop=v[1];z.rightStop=v[2];z.leftStop=v[3];return nullptr;
 }
-String getAxisPos(Axis *a) {return format_decimal((a->pos+a->originPos)/steps(a),3);}
-String getAxisLeftStop(Axis *a) {return a->leftStop==LONG_MAX?"-":format_decimal((a->leftStop+a->originPos)/steps(a),3);}
-String getAxisRightStop(Axis *a) {return a->rightStop==LONG_MIN?"-":format_decimal((a->rightStop+a->originPos)/steps(a),3);}
+String getAxisPos(Axis *a) {return format_decimal(h5_ui_limit_coordinate(a,a->pos),3);}
+String getAxisLeftStop(Axis *a) {return a->leftStop==LONG_MAX?"-":format_decimal(h5_ui_limit_coordinate(a,a->leftStop),3);}
+String getAxisRightStop(Axis *a) {return a->rightStop==LONG_MIN?"-":format_decimal(h5_ui_limit_coordinate(a,a->rightStop),3);}
 String getAxisStopDiff(Axis *a) {return format_decimal((a->leftStop-a->rightStop)/steps(a),3);}
 static lv_point_t pointer;
 static bool down;
@@ -172,7 +175,7 @@ int main() {
     click("JOG LIMITS\n\nOFF");assert(jogLimitsEnabled);
     // Cancel discards clears. Input uses signed display coordinates and zero offsets.
     click("EDIT\nLIMITS");row_click("X+",3);assert(x.leftStop==1500);click("Cancel");assert(x.leftStop==1500);
-    x.originPos=-1200;z.originPos=200;
+    work_offset[0]=1;work_offset[2]=-1;
     click("EDIT\nLIMITS");row_click("X-",1);click("+/-");click("2");
     render("limit-keypad.ppm");click("Enter");
     coordinate("X+","3");coordinate("Z-","-10");row_click("Z+",2);
@@ -185,7 +188,14 @@ int main() {
     measure=MEASURE_INCH;click("EDIT\nLIMITS");coordinate("Z-","-1");click("Apply");assert(z.rightStop==-5280);
     measure=MEASURE_METRIC;click("EDIT\nLIMITS");for(auto axis:{"X-","X+","Z-","Z+"})row_click(axis,3);click("Apply");
     assert(x.rightStop==LONG_MIN&&x.leftStop==LONG_MAX&&z.rightStop==LONG_MIN&&z.leftStop==LONG_MAX);
-    x.originPos=z.originPos=0;
+    // A work offset changed by a sender must not reinterpret an open editor draft.
+    click("EDIT\nLIMITS");coordinate("X+","3");work_offset[0]+=1;
+    click("Apply");assert(x.leftStop==LONG_MAX);
+    assert(find(lv_scr_act(),"Work zero or units changed. Cancel and reopen the editor."));click("Cancel");
+    click("EDIT\nLIMITS");row_click("X+",1);work_offset[2]+=1;
+    click("2");click("Enter");assert(x.leftStop==LONG_MAX);
+    assert(find(lv_scr_act(),"Coordinate out of range or work zero/units changed. Cancel and reopen the editor."));click("Cancel");
+    work_offset[0]=work_offset[2]=0;
     click("Thread");click("Settings");render("settings.ppm");click("CLOSE");
     click("PITCH");render("pitches.ppm");
     puts("PASS: four jog directions, release, slide-out cancellation, limit separation, disabled axes, all eight mode selectors");

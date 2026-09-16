@@ -4,7 +4,7 @@
 struct Axis {
     char name;
     float motorSteps, screwPitch;
-    long pos = 0, originPos = 0;
+    long pos = 0;
     long leftStop = LONG_MAX, rightStop = LONG_MIN;
     bool disabled = false;
 };

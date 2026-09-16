@@ -79,8 +79,8 @@ LimitEditor::LimitEditor(lv_obj_t *parent) {
     unsigned i = (unsigned)action - Numpad::LIMIT_X_MIN;
     if (i >= draft.size()) return;
     long converted;
-    if (measure != editMeasure || !h5_ui_limit_steps(axisFor(i), value, &converted)) {
-      lv_label_set_text(message, "Coordinate out of range or units changed. Reopen the editor if units changed.");
+    if (!coordinatesUnchanged() || !h5_ui_limit_steps(axisFor(i), value, &converted)) {
+      lv_label_set_text(message, "Coordinate out of range or work zero/units changed. Cancel and reopen the editor.");
       return;
     }
     draft[i] = converted;
@@ -90,7 +90,10 @@ LimitEditor::LimitEditor(lv_obj_t *parent) {
 LimitEditor::~LimitEditor() { keypad.reset(); lv_obj_del(panel); }
 void LimitEditor::show() {
   draft = {x.rightStop, x.leftStop, z.rightStop, z.leftStop};
+  h5_ui_limits_editable(); // Refresh the authoritative core coordinate snapshot.
   editMeasure = measure;
+  editOffset = {h5_ui_work_offset(&x), h5_ui_work_offset(&z)};
+  editSystem = h5_ui_work_system();
   keypad->hide();
   refresh();
   lv_obj_clear_flag(panel, LV_OBJ_FLAG_HIDDEN);
@@ -98,7 +101,7 @@ void LimitEditor::show() {
 }
 void LimitEditor::refresh() {
   const char *unit = editMeasure == MEASURE_METRIC ? "mm" : "in";
-  String caption = String("Coordinates: current display zero | X: slide travel | Units: ") + unit;
+  String caption = String("Coordinates: ") + editSystem + " work zero | X: slide travel | Units: " + unit;
   lv_label_set_text(units, caption.c_str());
   for (unsigned i = 0; i < draft.size(); ++i) {
     String value = "Enter value\n";
@@ -117,7 +120,7 @@ void LimitEditor::refresh() {
   lv_label_set_text(message, "Edits are saved together when you tap Apply. Cancel discards edits.");
 }
 void LimitEditor::enterValue(unsigned i) {
-  String prompt = String(names[i]) + " ENDPOINT (" + (editMeasure == MEASURE_METRIC ? "mm" : "in") + ", CURRENT DISPLAY ZERO)";
+  String prompt = String(names[i]) + " ENDPOINT (" + (editMeasure == MEASURE_METRIC ? "mm" : "in") + ", " + editSystem + " WORK ZERO)";
   keypad->show(static_cast<Numpad::Action>(Numpad::LIMIT_X_MIN + i), prompt.c_str());
 }
 void LimitEditor::useCurrent(unsigned i) {
@@ -125,12 +128,20 @@ void LimitEditor::useCurrent(unsigned i) {
     lv_label_set_text(message, "Stop motion and assisted operations before capturing a position.");
     return;
   }
+  if (!coordinatesUnchanged()) {
+    lv_label_set_text(message, "Work zero or units changed. Cancel and reopen the editor."); return;
+  }
   draft[i] = axisFor(i)->pos;
   refresh();
 }
+bool LimitEditor::coordinatesUnchanged() {
+  h5_ui_limits_editable();
+  return measure == editMeasure && editSystem == h5_ui_work_system() &&
+         editOffset[0] == h5_ui_work_offset(&x) && editOffset[1] == h5_ui_work_offset(&z);
+}
 void LimitEditor::apply() {
-  if (measure != editMeasure) {
-    lv_label_set_text(message, "Units changed. Cancel and reopen the editor."); return;
+  if (!coordinatesUnchanged()) {
+    lv_label_set_text(message, "Work zero or units changed. Cancel and reopen the editor."); return;
   }
   if (const char *error = h5_ui_apply_limits(draft.data())) { lv_label_set_text(message, error); return; }
   lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN);
