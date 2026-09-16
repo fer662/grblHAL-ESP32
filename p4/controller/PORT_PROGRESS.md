@@ -6,7 +6,7 @@ Earlier acceptance used a disconnected Waveshare P4 with enables locked. The
 0.3.3 main build enables normal axis controls for the operator-requested first
 unloaded Z test; installation status and remaining checks are recorded below.
 
-## 0.3.25 reduce X acceleration (built; not installed)
+## 0.3.25 reduce X acceleration (OTA uploaded; boot confirmation pending)
 
 Restores normal-build X acceleration from the 500 mm/s² trial to 25 mm/s² after
 reported motor stalls. Motion settings revision 4 replaces saved X=500 once and
@@ -19,8 +19,13 @@ write failures and retry), Single/Hold/Rapids, manual override rate tests and na
 planner/segment/ISR Thread simulation passed. ESP32-P4 0.3.25 build passed with
 22% OTA partition free. Set `IDF_COMPONENT_CHECK_NEW_VERSION=0` for this build:
 the optional newer-version check hit Kconfig symbols absent from the pinned LVGL
-8.3.11; pinned dependency versions and the lockfile remain unchanged. No OTA or
-on-machine motion commands sent for this revision.
+8.3.11; pinned dependency versions and the lockfile remain unchanged.
+
+The tablet at `10.0.0.110` accepted and verified the 0.3.25 application upload,
+then initiated restart. Its HTTP service responds, but diagnostics returns 403
+until the operator opens Diagnostics locally; running-version/boot acceptance
+confirmation is pending. No on-machine motion commands sent.
+Application SHA-256: `6217489acf4627ddd9926a18d142892e9bc808420d0276d91a095a34d9468972`.
 
 ## 0.3.24 assisted-operation compatibility (OTA installed; boot confirmed)
 
