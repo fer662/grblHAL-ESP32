@@ -302,8 +302,11 @@ and SHIFT numeric entry. Gearbox and Thread preview pixels outside the jog/limit
 panel match 0.3.6 exactly. The IDF 5.5.2 normal firmware build passed with 23%
 OTA partition space free. Application SHA-256:
 `9ee9209cc20a47311215869677afed3af951f0ba265850966d3a1b9e7b101c1e`.
-OTA installation and real-tablet acceptance remain pending. No remote motion
-command was issued. Current previews are linked from [UI_ROADMAP.md](UI_ROADMAP.md).
+The operator opened FW Update and the tablet verified and accepted this image
+over LAN OTA, then restarted. Post-boot version/rollback validation and operator
+acceptance remain pending; HTTP diagnostics requires opening the local Diagnostics
+screen. No remote motion command was issued. Current previews are linked from
+[UI_ROADMAP.md](UI_ROADMAP.md).
 
 ## Hardware acceptance still required
 
