@@ -1,5 +1,15 @@
 # Touchscreen improvements
 
+## Implemented in 0.3.13
+
+Both left-pane columns now use 80-pixel button heights. The header and upper
+rows begin at y=16, 112, 208 and 304, with consistent 16-pixel gaps. PITCH moves
+up 14 pixels to align with the third settings row. START and SHIFT begin at y=660
+and remain bottom-aligned at y=740 with the right pane.
+
+Actual LVGL renders: [Thread](docs/ui-0313-thread.png),
+[Gearbox](docs/ui-0313-gearbox.png).
+
 ## Implemented in 0.3.12
 
 START and SHIFT move to y=652, retaining their 88-pixel height. Their bottom

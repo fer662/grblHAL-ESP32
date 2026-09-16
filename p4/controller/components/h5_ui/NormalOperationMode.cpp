@@ -419,7 +419,7 @@ void NormalOperationMode::createRpmButton() {
   // Create RPM button in the navigation bar
   rpmButton = lv_btn_create(tabSelector->getNavigationBar());
 
-  lv_obj_set_size(rpmButton, 240, 64);
+  lv_obj_set_size(rpmButton, 240, 80);
   lv_obj_set_style_radius(rpmButton, 5, LV_PART_MAIN);
   lv_obj_set_style_text_color(rpmButton, lv_color_hex(0xFFFFFF), 0);
   lv_obj_set_style_pad_all(rpmButton, 4, LV_PART_MAIN);
@@ -1085,12 +1085,12 @@ void NormalOperationMode::repositionButtons(int targetMode) {
   // Stable, roomy columns: position/feed controls, cycle settings, then jog.
   lv_obj_set_pos(xAxisControls->getContainer(), 24, 112);
   lv_obj_set_pos(zAxisControls->getContainer(), 24, 208);
-  lv_obj_set_pos(pitchContainer, 24, 318);
-  lv_obj_set_size(startStopButton, 304, 88);
+  lv_obj_set_pos(pitchContainer, 24, 304);
+  lv_obj_set_size(startStopButton, 304, 80);
   // Align the action row with the right pane's bottom edge (y = 740).
-  lv_obj_set_pos(startStopButton, 24, 652);
-  lv_obj_set_size(shiftButton, 240, 88);
-  lv_obj_set_pos(shiftButton, 352, 652);
+  lv_obj_set_pos(startStopButton, 24, 660);
+  lv_obj_set_size(shiftButton, 240, 80);
+  lv_obj_set_pos(shiftButton, 352, 660);
 
   int y = 112;
   auto place = [&y](lv_obj_t *button) {

@@ -10,6 +10,10 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
 ## Current scope
 
+**0.3.13 aligns both left-pane columns on 80-pixel rows with 16-pixel gaps.**
+PITCH aligns with the third settings row; START and SHIFT retain their bottom
+alignment with the right pane. See [current touchscreen previews](UI_ROADMAP.md).
+
 **0.3.12 bottom-aligns START and SHIFT with the right pane** at y=740.
 See [current touchscreen previews](UI_ROADMAP.md).
 

@@ -18,9 +18,9 @@ CompactTabSelector::CompactTabSelector(lv_obj_t *parent, lv_coord_t width,
   LVCallbackWrapper::add(container, LV_EVENT_DELETE,
                          [this](lv_event_t *e) { this->container = nullptr; });
 
-  // Create navigation bar (full width, 40px height)
+  // Header buttons use the same 80-pixel height as the left-pane rows.
   navigationBar = lv_obj_create(container);
-  lv_obj_set_size(navigationBar, SCREEN_WIDTH, 96);
+  lv_obj_set_size(navigationBar, SCREEN_WIDTH, 112);
   lv_obj_set_style_pad_left(navigationBar, 24, LV_PART_MAIN);
   lv_obj_set_style_pad_right(navigationBar, 24, LV_PART_MAIN);
   lv_obj_set_style_pad_ver(navigationBar, 16, LV_PART_MAIN);
@@ -82,7 +82,7 @@ CompactTabSelector::~CompactTabSelector() {
 
 void CompactTabSelector::createCompactButton() {
   compactButton = lv_btn_create(navigationBar);
-  lv_obj_set_size(compactButton, 304, 64);
+  lv_obj_set_size(compactButton, 304, 80);
   lv_obj_set_style_pad_ver(compactButton, 0, LV_PART_MAIN);
   lv_obj_set_style_pad_hor(compactButton, 0, LV_PART_MAIN);
 
