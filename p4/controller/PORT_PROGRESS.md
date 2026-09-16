@@ -6,7 +6,7 @@ Earlier acceptance used a disconnected Waveshare P4 with enables locked. The
 0.3.3 main build enables normal axis controls for the operator-requested first
 unloaded Z test; installation status and remaining checks are recorded below.
 
-## 0.3.19 continuous clear-entry Thread (built; not installed)
+## 0.3.19 continuous clear-entry Thread (OTA uploaded)
 
 Checked committed H5 981851b: X infeed preceded phase wait there too. Implemented
 one continuous native-planner pass with clear Z run-up, moving X infeed/withdrawal,
@@ -22,6 +22,11 @@ internal and multistart cases, slow RPM ramps, cancellation, X speed, phase,
 pulse totals and endpoints. Existing host regressions and firmware build passed;
 LVGL preview rendered in both units. No attached-machine motion/OTA or loaded
 cut validation. Details in [CONTINUOUS_THREADING.md](CONTINUOUS_THREADING.md).
+
+OTA uploaded on 2026-09-16 at the operator’s request. The updater reported
+`Firmware verified; device restarting.` Independent post-boot confirmation
+and loaded-machine testing remain outstanding. No motion commands were sent.
+Uploaded application SHA-256: `8d8c469e17c409e6d30b97e60bd9b67decf47044e50423c506f8d5ea1d682d51`.
 
 ## 0.3.18 actual cut preview and acceleration (OTA uploaded)
 
