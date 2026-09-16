@@ -11,6 +11,11 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
 ## Current scope
 
+**0.3.25 restores X acceleration to 25 mm/s² after stalls with the 500 mm/s² trial.**
+A one-time native settings migration replaces that trial value and preserves other
+tuning. Normal X jogging remains 1 mm/s; Rapids remains 5 mm/s. STEP selects
+increment distance, not speed; Hold moves until release. Thread endpoints are unchanged.
+
 **0.3.24 restores stopped-spindle operation and saved machine state.** Profile
 cycles have no 30 RPM minimum or preview-derived RPM ceiling. They can position
 and plunge with the spindle off, then wait armed. Spindle stops pause a cutting
@@ -140,7 +145,7 @@ lathe. See [wireless commissioning](WIRELESS_COMMISSIONING.md).
 - Real grblHAL G-code parser, planner, Bresenham/AMASS step generation,
   acceleration profiles, feed hold/resume, jog cancellation and reset handling.
 - X/Z STEP/DIR on the existing H5 pins; calibration 1200 / 200 steps per mm,
-  max rates 300 / 960 mm/min, accelerations 500 / 100 mm/s² (normal build; disconnected bench retains X max 60 and X/Z acceleration 25/50), X radial coordinates.
+  max rates 300 / 960 mm/min, accelerations 25 / 100 mm/s² (normal build; disconnected bench retains X max 60 and X/Z acceleration 25/50), X radial coordinates.
 - grblHAL retains XYZ storage; Y commands and arcs outside G18 are rejected.
 - 10 MHz GPTimer scheduler and separate pulse timer. Minimum requested STEP
   width 10 us by default, direction setup at least 5 us. GPIO writes span two

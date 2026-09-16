@@ -60,10 +60,10 @@ The last depth is retained. It never jumps out of a cut halfway through.
 ## Geometry and operating limits
 
 - The exact calibration remains X 1200 and Z 200 steps/mm, spindle 1200 effective
-  counts/revolution; normal-build limits are X 300 and Z 960 mm/min, acceleration 500/100 mm/s².
+  counts/revolution; normal-build limits are X 300 and Z 960 mm/min, acceleration 25/100 mm/s².
   Ordinary X jogging stays 60 mm/min; the fourth STEP choice, Rapids, uses each
-  axis maximum while held. The 500 mm/s² X acceleration is a trial setting for
-  all X motion, not a mechanically validated limit.
+  axis maximum while held. Version 0.3.25 restores X acceleration to 25 mm/s²
+  after the 500 mm/s² trial caused reported stalls; custom settings are preserved.
 - X is radial slide travel. X0/Z0 select and set native G54. DRO, limit editor and
   previews use the active core work coordinates and selected mm/in display units.
   Saved endpoints and generated moves retain machine coordinates when zero changes.

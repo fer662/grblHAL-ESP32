@@ -1,4 +1,4 @@
-# Thread cycle — 0.3.24
+# Thread cycle — 0.3.25
 
 Restores the operator-requested H5 order using native grblHAL G33:
 
@@ -23,7 +23,9 @@ The cut waits armed if its requested lead times RPM exceeds the actual axis maxi
 there is no additional 10% rate headroom. The sequence
 matches old H5, while pulse timing and acceleration remain grblHAL-controlled.
 Multi-start lead/phase, depth progression, internal/external direction, bounds,
-G54, cancellation, Rapids, and the 5 mm/s / 500 mm/s² X trial settings are retained.
+G54, cancellation and Rapids are retained. X maximum speed remains 5 mm/s;
+0.3.25 restores X acceleration from the 500 mm/s² trial to 25 mm/s². This slows
+X plunge/retract acceleration with Z stationary; it does not subtract Z cutting travel.
 
 The custom `$P4THREADPASS` command, batch executor and moving-entry geometry have
 been removed. The pinned core still contains its optional continuous-block patch,

@@ -6,11 +6,27 @@ Earlier acceptance used a disconnected Waveshare P4 with enables locked. The
 0.3.3 main build enables normal axis controls for the operator-requested first
 unloaded Z test; installation status and remaining checks are recorded below.
 
-## 0.3.24 assisted-operation compatibility (OTA uploaded; boot confirmation pending)
+## 0.3.25 reduce X acceleration (built; not installed)
+
+Restores normal-build X acceleration from the 500 mm/s² trial to 25 mm/s² after
+reported motor stalls. Motion settings revision 4 replaces saved X=500 once and
+preserves other tuning, X max 5 mm/s, normal X jog 1 mm/s and Z acceleration.
+The obsolete 25-to-500 upgrade is removed for older installs too. Thread still
+plunges X before the Z pass and retracts after it; programmed Z travel is unchanged.
+
+Validation: native settings migration (including saved revision 3, custom tuning,
+write failures and retry), Single/Hold/Rapids, manual override rate tests and native
+planner/segment/ISR Thread simulation passed. ESP32-P4 0.3.25 build passed with
+22% OTA partition free. Set `IDF_COMPONENT_CHECK_NEW_VERSION=0` for this build:
+the optional newer-version check hit Kconfig symbols absent from the pinned LVGL
+8.3.11; pinned dependency versions and the lockfile remain unchanged. No OTA or
+on-machine motion commands sent for this revision.
+
+## 0.3.24 assisted-operation compatibility (OTA installed; boot confirmed)
 
 On 2026-09-16 the tablet at `10.0.0.110` accepted and verified the application
-upload and initiated restart. Remote diagnostics requires the operator to open
-Diagnostics after restart; running version and rollback confirmation are pending.
+upload and initiated restart. Subsequent read-only diagnostics confirmed running
+version 0.3.24 on ota_1 with ota_validation_pending=false, Ready, alarm=0, fault=0.
 Application SHA-256: `90c6fc3cf71147a67f88af554212259beeff7839b5c52ce337e7d98edf2c076b`.
 
 Profiles can start with the spindle off; removed 30 RPM/preview-ceiling policies

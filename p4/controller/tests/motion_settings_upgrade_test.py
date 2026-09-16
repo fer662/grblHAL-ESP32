@@ -30,17 +30,17 @@ static esp_err_t nvs_get_u8(int h,const char *key,uint8_t *value) {
  assert(h==handle && !strcmp(key,"motion_rev"));*value=stored_revision;return read_result;
 }
 static esp_err_t nvs_set_u8(int h,const char *key,uint8_t value) {
- assert(h==handle && !strcmp(key,"motion_rev") && value==3);marker_calls++;
+ assert(h==handle && !strcmp(key,"motion_rev") && value==4);marker_calls++;
  if(!marker_write_ok)return ESP_FAIL;
  stored_revision=value;read_result=ESP_OK;return ESP_OK;
 }
 static esp_err_t nvs_commit(int h) {assert(h==handle);return ESP_OK;}
 static int settings_store_setting(int id,char *value) {
- assert((id==122 && !strcmp(value,"100")) || (id==110 && !strcmp(value,"300")) || (id==120 && !strcmp(value,"500")));setter_calls++;
+ assert((id==122 && !strcmp(value,"100")) || (id==110 && !strcmp(value,"300")) || (id==120 && !strcmp(value,"25")));setter_calls++;
  if(!setter_ok)return Status_Error;
  if(id==122) settings.axis[2].acceleration=100*3600;
  else if(id==110) settings.axis[0].max_rate=300;
- else settings.axis[0].acceleration=500*3600;
+ else settings.axis[0].acceleration=25*3600;
  return Status_OK;
 }
 static void nvs_buffer_sync_physical(void) {sync_calls++;if(core_write_ok)writes++;}
@@ -62,44 +62,56 @@ int main(void) {
   assert(settings.axis[2].acceleration==50*3600 && !setter_calls && !marker_calls);
   puts("PASS: benchmark settings are not migrated");return 0;
  }
- assert(settings.axis[0].acceleration==500*3600 && settings.axis[2].acceleration==100*3600);
+ assert(settings.axis[0].acceleration==25*3600 && settings.axis[2].acceleration==100*3600);
  assert(settings.axis[0].max_rate==300);
- assert(setter_calls==3 && sync_calls==1 && writes==1 && stored_revision==3);
- // Tuning after this migration survives future boots, including former defaults.
- settings.axis[0].acceleration=25*3600;settings.axis[2].acceleration=50*3600;settings.axis[0].max_rate=60;
- h5_storage_upgrade_motion();assert(setter_calls==3);
- assert(settings.axis[0].acceleration==25*3600 && settings.axis[0].max_rate==60);
- for(unsigned revision=1;revision<=2;revision++) {
+ assert(setter_calls==2 && sync_calls==1 && writes==1 && stored_revision==4);
+ // Tuning after migration survives future boots, even the former trial value.
+ settings.axis[0].acceleration=500*3600;settings.axis[2].acceleration=50*3600;settings.axis[0].max_rate=60;
+ h5_storage_upgrade_motion();assert(setter_calls==2);
+ assert(settings.axis[0].acceleration==500*3600 && settings.axis[0].max_rate==60);
+ for(unsigned revision=1;revision<=3;revision++) {
   reset();stored_revision=revision;read_result=ESP_OK;settings.axis[0].max_rate=300;
   h5_storage_upgrade_motion();
-  assert(setter_calls==1 && settings.axis[2].acceleration==50*3600);
-  assert(settings.axis[0].max_rate==300 && settings.axis[0].acceleration==500*3600 && stored_revision==3);
+  assert(!setter_calls && !sync_calls && settings.axis[2].acceleration==50*3600);
+  assert(settings.axis[0].max_rate==300 && settings.axis[0].acceleration==25*3600 && stored_revision==4);
+ }
+ // Retire the 500 trial from any older revision, including revision 3 already installed.
+ for(unsigned revision=0;revision<=3;revision++) {
+  reset();stored_revision=revision;read_result=ESP_OK;settings.axis[0].acceleration=500*3600;
+  h5_storage_upgrade_motion();
+  assert(settings.axis[0].acceleration==25*3600 && stored_revision==4);
+  assert(setter_calls==1+(revision<1)+(revision<2) && sync_calls==1 && writes==1);
+  assert(settings.axis[0].max_rate==(revision<2?300:60));
+  assert(settings.axis[2].acceleration==(revision<1?100:50)*3600);
  }
  // Revision 2 explicitly restored X speed to 60: retain that tuning.
  reset();stored_revision=2;read_result=ESP_OK;h5_storage_upgrade_motion();
- assert(settings.axis[0].max_rate==60 && setter_calls==1);
- for(unsigned custom=0;custom<2;custom++) {
+ assert(settings.axis[0].max_rate==60 && !setter_calls && stored_revision==4);
+ for(unsigned custom=0;custom<3;custom++) {
+  const float accelerations[]={25,80,100};
   reset();settings.axis[2].acceleration=(custom?100:75)*3600;
-  settings.axis[0].max_rate=custom?300:180;settings.axis[0].acceleration=(custom?500:80)*3600;
-  h5_storage_upgrade_motion();assert(!setter_calls && !sync_calls && stored_revision==3);
+  settings.axis[0].max_rate=custom?300:180;settings.axis[0].acceleration=accelerations[custom]*3600;
+  h5_storage_upgrade_motion();assert(!setter_calls && !sync_calls && stored_revision==4);
   assert(settings.axis[2].acceleration==(custom?100:75)*3600);
   assert(settings.axis[0].max_rate==(custom?300:180));
-  assert(settings.axis[0].acceleration==(custom?500:80)*3600);
+  assert(settings.axis[0].acceleration==accelerations[custom]*3600);
  }
  reset();ready=false;h5_storage_upgrade_motion();assert(!setter_calls && !marker_calls);
  reset();read_result=ESP_FAIL;h5_storage_upgrade_motion();assert(!setter_calls && !marker_calls);
- reset();stored_revision=3;read_result=ESP_OK;h5_storage_upgrade_motion();assert(!setter_calls && !marker_calls);
- for(unsigned revision=0;revision<=2;revision++) {
-  reset();stored_revision=revision;read_result=ESP_OK;setter_ok=false;
+ reset();stored_revision=4;read_result=ESP_OK;h5_storage_upgrade_motion();assert(!setter_calls && !marker_calls);
+ for(unsigned revision=0;revision<=3;revision++) {
+  reset();stored_revision=revision;read_result=ESP_OK;setter_ok=false;settings.axis[0].acceleration=500*3600;
   h5_storage_upgrade_motion();assert(setter_calls==1 && !sync_calls && !marker_calls);
  }
- reset();core_write_ok=false;h5_storage_upgrade_motion();assert(sync_calls==1 && !writes && !marker_calls);
+ reset();stored_revision=3;read_result=ESP_OK;settings.axis[0].acceleration=500*3600;
+ core_write_ok=false;h5_storage_upgrade_motion();assert(sync_calls==1 && !writes && !marker_calls);
  // Next boot retries old persisted values when a core write failed.
- settings.axis[2].acceleration=50*3600;settings.axis[0].max_rate=60;settings.axis[0].acceleration=25*3600;
+ settings.axis[0].acceleration=500*3600;
  core_write_ok=true;h5_storage_upgrade_motion();
- assert(setter_calls==6 && writes==1 && stored_revision==3);
- reset();marker_write_ok=false;h5_storage_upgrade_motion();assert(writes==1 && failures==1 && !stored_revision);
- marker_write_ok=true;h5_storage_upgrade_motion();assert(setter_calls==3 && stored_revision==3);
+ assert(setter_calls==2 && writes==1 && stored_revision==4);
+ reset();stored_revision=3;read_result=ESP_OK;settings.axis[0].acceleration=500*3600;
+ marker_write_ok=false;h5_storage_upgrade_motion();assert(writes==1 && failures==1 && stored_revision==3);
+ marker_write_ok=true;h5_storage_upgrade_motion();assert(setter_calls==1 && stored_revision==4);
  puts("PASS: native $122/$110/$120 migrations, tuning preservation, write failures and retry");
 }
 '''.replace('UPGRADE',upgrade).replace('VALIDATOR',validator)

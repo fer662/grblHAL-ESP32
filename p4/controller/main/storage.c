@@ -165,7 +165,7 @@ void h5_storage_upgrade_motion(void)
     if (!ready || H5_BENCH_ONLY) return;
     uint8_t revision = 0;
     esp_err_t result = nvs_get_u8(handle, "motion_rev", &revision);
-    if ((result != ESP_OK && result != ESP_ERR_NVS_NOT_FOUND) || revision >= 3) return;
+    if ((result != ESP_OK && result != ESP_ERR_NVS_NOT_FOUND) || revision >= 4) return;
     uint32_t before = writes;
     bool changed = false;
     if (revision < 1 && settings.axis[Z_AXIS].acceleration == 50.0f * 3600.0f) {
@@ -178,8 +178,9 @@ void h5_storage_upgrade_motion(void)
         if (settings_store_setting(Setting_AxisMaxRate + X_AXIS, value) != Status_OK) return;
         changed = true;
     }
-    if (settings.axis[X_AXIS].acceleration == 25.0f * 3600.0f) {
-        char value[] = "500";
+    // Retire the aggressive revision-3 trial without changing other X tuning.
+    if (settings.axis[X_AXIS].acceleration == 500.0f * 3600.0f) {
+        char value[] = "25";
         if (settings_store_setting(Setting_AxisAcceleration + X_AXIS, value) != Status_OK) return;
         changed = true;
     }
@@ -188,7 +189,7 @@ void h5_storage_upgrade_motion(void)
         // Do not mark the upgrade complete if the core blob did not reach flash.
         if (writes == before) return;
     }
-    if (nvs_set_u8(handle, "motion_rev", 3) != ESP_OK || nvs_commit(handle) != ESP_OK)
+    if (nvs_set_u8(handle, "motion_rev", 4) != ESP_OK || nvs_commit(handle) != ESP_OK)
         failures++;
 }
 void h5_storage_poll(void)

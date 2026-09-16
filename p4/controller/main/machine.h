@@ -13,7 +13,7 @@
 #define DEFAULT_X_ACCELERATION 25.0f
 #else
 #define DEFAULT_X_MAX_RATE 300.0f // 5 mm/s for planned moves; manual jog still requests 60.
-#define DEFAULT_X_ACCELERATION 500.0f
+#define DEFAULT_X_ACCELERATION 25.0f
 #endif
 #define DEFAULT_Z_MAX_RATE 960.0f
 #if H5_BENCH_ONLY
