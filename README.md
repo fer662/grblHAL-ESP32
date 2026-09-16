@@ -1,3 +1,5 @@
+> ESP32-P4 support: [P4 driver and standalone example](p4/README.md). This branch keeps the upstream ESP32/S3 driver and core pin unchanged.
+
 ## ESP32 grblHAL driver
 
 __Important:__  

@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.16)
+option(P4_BENCH_ONLY "Lock motor enables for disconnected bench validation" ON)
+set(EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/../components/grblhal_p4")
+set(GRBLHAL_P4_CONFIG_HEADER "${CMAKE_CURRENT_LIST_DIR}/main/machine.h" CACHE FILEPATH "Application grblHAL configuration")
+include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+project(grblhal_p4)

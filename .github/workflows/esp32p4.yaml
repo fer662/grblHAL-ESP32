@@ -1,0 +1,30 @@
+name: Build ESP32-P4
+on:
+  push:
+    branches: [codex/esp32p4]
+  pull_request:
+    paths:
+      - 'p4/**'
+      - 'main/grbl'
+      - '.github/workflows/esp32p4.yaml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v5.5.2
+    strategy:
+      matrix:
+        bench: ['ON', 'OFF']
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test pulse and enable callbacks
+        run: python3 p4/tests/pulse_service_test.py
+      - name: Initialize upstream core
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE" && git submodule update --init main/grbl
+      - name: Build standalone driver example
+        shell: bash
+        run: |
+          . /opt/esp/idf/export.sh
+          idf.py -C p4/example -DP4_BENCH_ONLY=${{ matrix.bench }} build

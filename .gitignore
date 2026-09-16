@@ -33,3 +33,6 @@ build
 
 .vscode/settings.json
 .vscode/c_cpp_properties.json
+
+# Named ESP32-P4 build variants
+/build-*/
