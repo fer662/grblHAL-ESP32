@@ -4,7 +4,7 @@
 #include "config.h"
 #include "Axis.h"
 extern int mode, measure, turnPasses, starts;
-extern bool isOn, auxForward, buzzerEnabled;
+extern bool isOn, auxForward, buzzerEnabled, jogContinuous;
 extern long dupr, moveStep;
 extern float coneRatio;
 extern PitchType pitchType;

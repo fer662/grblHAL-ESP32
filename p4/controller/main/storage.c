@@ -25,7 +25,7 @@ static bool valid_preferences(const h5_preferences_t *p)
            p->measure <= 2 && p->pitch_type >= 0 && p->pitch_type <= 2 && abs(p->pitch) <= 10000000 &&
            p->move_step > 0 && p->move_step <= 10000000 && p->passes > 0 && p->passes <= 999 &&
            p->starts > 0 && p->starts <= 124 && isfinite(p->cone_ratio) && fabsf(p->cone_ratio) <= 10000 &&
-           p->aux_forward <= 1 && p->sound <= 1;
+           p->aux_forward <= 1 && p->sound <= 1 && p->jog_mode <= 1;
 }
 bool h5_storage_ready(void)
 {

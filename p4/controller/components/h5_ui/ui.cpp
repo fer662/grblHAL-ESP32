@@ -21,7 +21,7 @@
 #include <atomic>
 
 int mode = MODE_NORMAL, measure = MEASURE_METRIC, turnPasses = 1, starts = 1;
-bool isOn = false, auxForward = false, buzzerEnabled = true;
+bool isOn = false, auxForward = false, buzzerEnabled = true, jogContinuous = true;
 long dupr = 1000, moveStep = MOVE_STEP_1;
 float coneRatio = 1.0f;
 PitchType pitchType = PITCH_TYPE_MM_PER_TURN;
@@ -38,9 +38,8 @@ static bool cycle_selected;
 static String notice;
 static uint32_t last_command, last_completed, last_generation;
 static Axis *held_axis;
-static int held_sign;
-static uint32_t last_jog_time;
 static bool continuous_jog;
+static uint32_t single_jog_id;
 static Display display;
 static StateMachine screens(display);
 
@@ -75,25 +74,44 @@ static void jog(Axis *a, int sign, float distance, float feed)
     snprintf(command, sizeof(command), "$J=G21G91%c%.6fF%.3f", a->name, sign * distance, feed);
     send(command);
 }
+static void cancel_ui_motion()
+{
+    single_jog_id = 0;
+    held_axis = nullptr;
+    h5_bridge_cancel();
+}
 void h5_ui_jog(Axis *a, int sign, bool pressed)
 {
-    if (h5_follow_busy()) {
-        if(!pressed) { h5_follow_release();held_axis=nullptr;return; }
-        bool continuous=moveStep==MOVE_STEP_1 || moveStep==MOVE_STEP_IMP_1;
-        h5_follow_jog(a->name,sign,continuous?(a==&x?MAX_TRAVEL_MM_X:MAX_TRAVEL_MM_Z):moveStep/10000.0,true);
-        held_axis=a;held_sign=sign;continuous_jog=continuous;last_jog_time=millis();return;
-    }
     if (!pressed) {
-        if (held_axis == a) { held_axis = nullptr; h5_bridge_cancel(); }
+        if (held_axis != a) return;
+        held_axis = nullptr;
+        // A single step completes even after release; Hold stops on release.
+        if (continuous_jog) {
+            if (h5_follow_busy()) h5_follow_release();
+            else cancel_ui_motion();
+        }
         return;
     }
-    if (held_axis) h5_bridge_cancel();
-    held_axis = a;
-    held_sign = sign;
-    continuous_jog = moveStep == MOVE_STEP_1 || moveStep == MOVE_STEP_IMP_1;
+    if (held_axis || a->disabled || h5_axis_change_pending()) return;
+    continuous_jog = jogContinuous;
     float distance = continuous_jog ? (a == &x ? MAX_TRAVEL_MM_X : MAX_TRAVEL_MM_Z) : moveStep / 10000.0f;
+    if (h5_follow_busy()) {
+        if (h5_follow_jog(a->name, sign, distance, continuous_jog)) held_axis = a;
+        return;
+    }
+    h5_bridge_snapshot(&status);
+    // Do not build a queue of taps against the same stale limit/position.
+    // completed_id updates in the ACK callback, before motion may be sampled.
+    // Wait for a complete motion sample that has observed this request's ACK.
+    if (status.moving || status.held || (single_jog_id &&
+        status.sampled_completed_id < single_jog_id)) {
+        notice = "Wait for the jog to finish";
+        return;
+    }
+    held_axis = a;
+    uint32_t before = last_command;
     jog(a, sign, distance, a == &x ? 60 : 960);
-    last_jog_time = millis();
+    if (!continuous_jog && last_command != before) single_jog_id = last_command;
 }
 void manualMoveAxis(Axis *a, float mm)
 { jog(a, mm < 0 ? -1 : 1, fabsf(mm), a == &x ? 60 : 960); }
@@ -104,13 +122,14 @@ void markAxis0(Axis *a)
 }
 void setAxisDisabled(Axis *a, bool disabled)
 {
+    single_jog_id = 0;
     held_axis = nullptr;
     h5_axis_set_disabled(a->name, disabled);
     a->disabled = disabled;
     notice = disabled ? "" : "Axis available";
 }
-void setLeftStop(Axis *a, long value) { held_axis = nullptr; h5_bridge_cancel(); a->leftStop = value; }
-void setRightStop(Axis *a, long value) { held_axis = nullptr; h5_bridge_cancel(); a->rightStop = value; }
+void setLeftStop(Axis *a, long value) { held_axis = nullptr; cancel_ui_motion(); a->leftStop = value; }
+void setRightStop(Axis *a, long value) { held_axis = nullptr; cancel_ui_motion(); a->rightStop = value; }
 static String position_text(Axis *a, long position)
 {
     double mm = position / steps_mm(a);
@@ -127,20 +146,20 @@ static void apply_feed_edit()
         if (!h5_follow_update(dupr / 10000.0, coneRatio, auxForward))
             notice = "Feed stopped: select a valid nonzero pitch";
     } else if (h5_cycle_busy()) {
-        h5_bridge_cancel();
+        cancel_ui_motion();
         notice = "Cycle stopped: review changed parameters before restarting";
     }
 }
 void setDupr(long value) { if (dupr != value) { dupr = value; apply_feed_edit(); } }
-void setTurnPasses(int value) { if (turnPasses != value) { turnPasses = value; if (h5_cycle_busy()) h5_bridge_cancel(); } }
-void setStarts(int value) { if (starts != value) { starts = value; if (h5_cycle_busy()) h5_bridge_cancel(); } }
+void setTurnPasses(int value) { if (turnPasses != value) { turnPasses = value; if (h5_cycle_busy()) cancel_ui_motion(); } }
+void setStarts(int value) { if (starts != value) { starts = value; if (h5_cycle_busy()) cancel_ui_motion(); } }
 void setAuxForward(bool value) { if (auxForward != value) { auxForward = value; apply_feed_edit(); } }
 void setConeRatio(float value) { if (coneRatio != value) { coneRatio = value; apply_feed_edit(); } }
 bool isPassMode() { return mode == MODE_TURN || mode == MODE_FACE || mode == MODE_THREAD || mode == MODE_CUT || mode == MODE_ELLIPSE; }
 int getApproxRpm() { return (int)lroundf(fabsf(status.rpm)); }
 void setModeFromTask(int value)
 {
-    if (value != mode) { h5_bridge_cancel(); held_axis = nullptr; isOn = false; }
+    if (value != mode) { cancel_ui_motion(); held_axis = nullptr; isOn = false; }
     mode = value;
     notice.clear();
 }
@@ -206,7 +225,7 @@ static void preview_cycle()
 }
 void buttonOnOffPress(bool on)
 {
-    if (!on) { h5_bridge_cancel(); held_axis = nullptr; isOn = false; return; }
+    if (!on) { cancel_ui_motion(); held_axis = nullptr; isOn = false; return; }
     if (isPassMode()) { preview_cycle(); return; }
     if(z.disabled || (mode==MODE_CONE && x.disabled)) {notice="Required axis is disabled";return;}
     h5_follow_config_t config={};
@@ -233,9 +252,10 @@ void h5_ui_sync()
 {
     h5_preferences_t prefs={};prefs.version=1;prefs.mode=mode;prefs.measure=measure;prefs.pitch_type=pitchType;
     prefs.pitch=dupr;prefs.move_step=moveStep;prefs.passes=turnPasses;prefs.starts=starts;prefs.cone_ratio=coneRatio;
-    prefs.aux_forward=auxForward;prefs.sound=buzzerEnabled;h5_preferences_set(&prefs);
+    prefs.aux_forward=auxForward;prefs.sound=buzzerEnabled;prefs.jog_mode=jogContinuous?0:1;h5_preferences_set(&prefs);
     h5_bridge_snapshot(&status);
     if (status.stream_generation != last_generation) {
+        single_jog_id = 0;
         if (!h5_follow_manual_held()) held_axis = nullptr;
         Buzzer::getInstance().endContinuousBeep();
         isOn = false;
@@ -256,11 +276,6 @@ void h5_ui_sync()
         if(!h5_follow_busy()) notice+=" | Pass "+std::to_string(cycle.pass)+", start "+std::to_string(cycle.start);
     } else if (cycle_selected) { isOn=false; cycle_selected=false; notice=cycle.message; }
     else if (isOn && !status.moving && status.completed_id >= last_command) isOn = false;
-    if (held_axis && !continuous_jog && !status.moving && status.completed_id >= last_command && millis() - last_jog_time >= 150) {
-        if (h5_follow_busy()) h5_follow_jog(held_axis->name, held_sign, moveStep / 10000.0, true);
-        else jog(held_axis, held_sign, moveStep / 10000.0f, held_axis == &x ? 60 : 960);
-        last_jog_time = millis();
-    }
     if(update_label) {
         h5_update_status_t update;h5_update_snapshot(&update);char text[400], pairing[80];
         if (update.pairing_required)
@@ -308,7 +323,7 @@ void h5_ui_sync()
 }
 void h5_ui_show_update()
 {
-    h5_bridge_cancel();
+    cancel_ui_motion();
     held_axis = nullptr;
     h5_update_request();
     if (!update_panel) {
@@ -403,11 +418,11 @@ static void ui_task(void *)
                 x.rightStop=isPassMode()?0:-lround(steps_mm(&x));x.leftStop=lround(steps_mm(&x)*(isPassMode()?.1:1));
                 z.rightStop=isPassMode()?0:-lround(steps_mm(&z)*2);z.leftStop=lround(steps_mm(&z)*(isPassMode()?1:2));
             }
-            if(action=='N') { moveStep=MOVE_STEP_3;continue; }
+            if(action=='N') { moveStep=MOVE_STEP_3;jogContinuous=false;continue; }
             if(action=='+') { setDupr(dupr*2); continue; }
             if(action=='R' && !h5_cycle_busy() && !status.moving) {
                 mode=MODE_NORMAL;dupr=1000;turnPasses=starts=1;auxForward=false;coneRatio=1;
-                measure=MEASURE_METRIC;pitchType=PITCH_TYPE_MM_PER_TURN;moveStep=MOVE_STEP_1;buzzerEnabled=true;
+                measure=MEASURE_METRIC;pitchType=PITCH_TYPE_MM_PER_TURN;moveStep=MOVE_STEP_1;buzzerEnabled=true;jogContinuous=true;
                 x.leftStop=z.leftStop=LONG_MAX;x.rightStop=z.rightStop=LONG_MIN;continue;
             }
             if(action=='V') {lv_event_send(status_label,LV_EVENT_CLICKED,nullptr);continue;}
@@ -430,7 +445,7 @@ extern "C" void h5_ui_start(void)
     h5_preferences_t prefs;
     if(h5_preferences_get(&prefs)) {
         mode=prefs.mode;measure=prefs.measure;pitchType=(PitchType)prefs.pitch_type;dupr=prefs.pitch;moveStep=prefs.move_step;
-        turnPasses=prefs.passes;starts=prefs.starts;coneRatio=prefs.cone_ratio;auxForward=prefs.aux_forward;buzzerEnabled=prefs.sound;
+        turnPasses=prefs.passes;starts=prefs.starts;coneRatio=prefs.cone_ratio;auxForward=prefs.aux_forward;buzzerEnabled=prefs.sound;jogContinuous=prefs.jog_mode==0;
     }
     test_actions = xQueueCreate(8, sizeof(char));
     configASSERT(test_actions);

@@ -144,6 +144,9 @@ void h5_follow_release(void)
 {
     h5_critical_enter(&lock, 3000 + __LINE__);
     manual_held = false;
+    // A quick press/release can arrive before the grbl task starts the jog.
+    // Discard that pending Hold request as well as stopping an active move.
+    manual_pending = false;
     release_requested = true;
     h5_critical_exit(&lock);
 }

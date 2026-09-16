@@ -86,6 +86,7 @@ void NormalOperationMode::updateDisplay() {
   updateRpmDisplay();
   updatePitchButtonText();
   updateStepButton();
+  updateJogModeButton();
   updateConeRatioButton();
   updateAuxToggleButton();
   updateThreadingStartsButton();
@@ -182,6 +183,7 @@ void NormalOperationMode::createMainScreen() {
 
   // Create step button
   createStepButton();
+  createJogModeButton();
 
   createConeRatioButton();
 
@@ -551,12 +553,10 @@ void NormalOperationMode::createPitchButtons() {
 
 void NormalOperationMode::createStepButton() {
   // Create container for step button
-  stepButton = lv_btn_create(mainScreen);
+  stepButton = lv_btn_create(dpad->getContainer());
 
-  lv_obj_set_size(stepButton, 140, buttonHeight);
-  lv_obj_align(stepButton, LV_ALIGN_TOP_LEFT, 10,
-               5 + buttonHeight * 4 +
-                   verticalSpacing * 4); // Below pitch controls
+  lv_obj_set_size(stepButton, 184, buttonHeight);
+  lv_obj_set_pos(stepButton, 16, 112);
   lv_obj_set_style_radius(stepButton, 5, LV_PART_MAIN);
   lv_obj_set_style_text_color(stepButton, lv_color_hex(0xFFFFFF), 0);
   lv_obj_set_style_pad_all(stepButton, 6, LV_PART_MAIN);
@@ -584,6 +584,34 @@ void NormalOperationMode::createStepButton() {
                            Buzzer::getInstance().beepSuccess();
                          });
   updateStepButton(true);
+}
+
+void NormalOperationMode::createJogModeButton() {
+  jogModeButton = lv_btn_create(dpad->getContainer());
+  lv_obj_set_size(jogModeButton, 128, 128);
+  lv_obj_set_pos(jogModeButton, 236, 244);
+  lv_obj_set_style_radius(jogModeButton, 12, 0);
+  lv_obj_set_style_bg_color(jogModeButton, APP_COLOR_BG_TERTIARY, 0);
+  lv_obj_set_style_border_width(jogModeButton, 2, 0);
+  lv_obj_set_style_border_color(jogModeButton, APP_COLOR_INFO, 0);
+  lv_obj_set_style_pad_all(jogModeButton, 4, 0);
+  jogModeLabel = lv_label_create(jogModeButton);
+  lv_obj_set_style_text_font(jogModeLabel, &lv_font_montserrat_18, 0);
+  lv_obj_set_style_text_align(jogModeLabel, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_center(jogModeLabel);
+  LVCallbackWrapper::add(jogModeButton, LV_EVENT_CLICKED, [this](lv_event_t *) {
+    jogContinuous = !jogContinuous;
+    updateJogModeButton();
+    Buzzer::getInstance().beepSuccess();
+  });
+  updateJogModeButton(true);
+}
+
+void NormalOperationMode::updateJogModeButton(bool force) {
+  if (force || lastJogContinuous != jogContinuous) {
+    lv_label_set_text(jogModeLabel, jogContinuous ? "JOG MODE\n\nHOLD" : "JOG MODE\n\nSINGLE\nSTEP");
+    lastJogContinuous = jogContinuous;
+  }
 }
 
 void NormalOperationMode::createDPad() {
@@ -1012,8 +1040,6 @@ void NormalOperationMode::repositionButtons(int targetMode) {
   lv_obj_set_pos(xAxisControls->getContainer(), 24, 112);
   lv_obj_set_pos(zAxisControls->getContainer(), 24, 208);
   lv_obj_set_pos(pitchContainer, 24, 318);
-  lv_obj_set_size(stepButton, 304, buttonHeight);
-  lv_obj_set_pos(stepButton, 24, 414);
   lv_obj_set_size(startStopButton, 304, 88);
   lv_obj_set_pos(startStopButton, 24, 534);
   lv_obj_set_size(shiftButton, 240, 88);

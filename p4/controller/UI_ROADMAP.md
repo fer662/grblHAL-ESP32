@@ -1,5 +1,36 @@
 # Touchscreen improvements
 
+## Implemented in 0.3.8
+
+The right pane now contains a separate central **JOG MODE: HOLD / SINGLE STEP**
+toggle and the relocated **STEP** button in its upper-left corner. The square
+128 x 128 jog targets form a balanced cross around the mode control. All eight
+operation-specific control sets retain their existing positions.
+
+- Hold moves while the direction is pressed and stops on release or slide-out.
+- Single step starts one selected increment per press; it completes after release
+  and does not repeat when held. Ordinary jogs reject taps while a previous step
+  is pending or moving. Machining limits still clip requested distances.
+- The step size no longer selects the jog mode: 1 mm is now a real single step
+  when Single step is selected. The mode is saved independently, reusing a
+  previously reserved preference byte; older settings load with Hold selected.
+- STEP still cycles the existing metric/inch increments; its long press still
+  switches units. SHIFT retains one-off numeric movement and limit entry.
+- During active spindle-synchronized feed, the existing Z override rule rounds
+  displacement up to whole pitches to retain phase. Single-step routing retains
+  that rule, then allows assisted feed to resume; it is not a fixed absolute Z
+  displacement in that context.
+
+Desktop previews: [Thread](docs/ui-038-thread.png),
+[Single step](docs/ui-038-single-step.png), [Gearbox](docs/ui-038-gearbox.png).
+
+Suggested remaining corner controls, not implemented:
+
+1. **Jog speed**: explicit slow/normal choices within each axis's configured rate.
+2. **Limits**: edit the endpoints together, see their span, and clear one axis's
+   limits deliberately while stopped. Keep the directional endpoint shortcuts.
+3. **Cancel movement**: a readily accessible way to interrupt a single move.
+
 ## Implemented in 0.3.7
 
 The operator selected the outer-compass jog/limit layout while retaining the
@@ -40,7 +71,7 @@ Desktop renders, with simulated readings:
 
 ## Suggested additions using the existing core
 
-These are proposals, not enabled controls in 0.3.7. They require no new motion
+These are proposals, not enabled controls in 0.3.8. They require no new motion
 planner. Source references describe this checkout, not all upstream configurations.
 
 | Priority | UI addition | Existing support and integration required |

@@ -52,6 +52,9 @@ private:
   lv_obj_t *startStopButton = nullptr;
   bool startStopButtonState = false; // Track current button state
   lv_obj_t *stepButton = nullptr;
+  lv_obj_t *jogModeButton = nullptr;
+  lv_obj_t *jogModeLabel = nullptr;
+  bool lastJogContinuous = true;
 
   // Pitch selection
   lv_obj_t *pitchContainer = nullptr;
@@ -97,6 +100,7 @@ private:
   void createStartStopButtons();
   void createPitchButtons();
   void createStepButton();
+  void createJogModeButton();
   void createPassesButton();
   void createThreadingStartsButton();
   void createAuxToggleButton();
@@ -110,6 +114,7 @@ private:
   void updateRpmDisplay();
   void updatePitchButtonText(bool force = false);
   void updateStepButton(bool force = false);
+  void updateJogModeButton(bool force = false);
   void updatePassesButton(bool force = false);
   void updateThreadingStartsButton(bool force = false);
   void updateAuxToggleButton(bool force = false);

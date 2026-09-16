@@ -9,7 +9,7 @@
 #include <vector>
 
 int mode=MODE_NORMAL, measure=MEASURE_METRIC, turnPasses=3, starts=2;
-bool isOn=false, auxForward=false, buzzerEnabled=false;
+bool isOn=false, auxForward=false, buzzerEnabled=false, jogContinuous=true;
 long dupr=1000, moveStep=MOVE_STEP_1;
 float coneRatio=.25f;
 PitchType pitchType=PITCH_TYPE_MM_PER_TURN;
@@ -105,6 +105,10 @@ int main() {
     Display display;display.begin();StateMachine screens(display);
     screens.switchMode(screens.createNormalOperationMode());screens.updateDisplay();
     check_main_layout();render("gearbox.ppm");
+    click("JOG MODE\n\nHOLD");assert(!jogContinuous);check_main_layout();render("single-step.ppm");
+    click("JOG MODE\n\nSINGLE\nSTEP");assert(jogContinuous);
+    click("STEP");assert(moveStep==MOVE_STEP_3);screens.updateDisplay();
+    moveStep=MOVE_STEP_1;screens.updateDisplay();
     const char *labels[]={LV_SYMBOL_UP "  X+",LV_SYMBOL_DOWN "  X-",LV_SYMBOL_LEFT "  Z+","Z-  " LV_SYMBOL_RIGHT};
     const char axes[]={'X','X','Z','Z'};const int signs[]={1,-1,1,-1};
     for(unsigned i=0;i<4;i++) {
@@ -115,6 +119,10 @@ int main() {
     jogs.clear();auto up=center(labels[0]),left=center(labels[2]);
     touch(up.x,up.y,true);touch(left.x,left.y,true);touch(left.x,left.y,true);touch(left.x,left.y,false);
     assert(jogs.size()==2 && jogs[0].axis=='X' && !jogs[1].pressed);
+    // Sliding into the new center control must not change jog mode.
+    auto middle=center("JOG MODE\n\nHOLD");jogs.clear();
+    touch(up.x,up.y,true);touch(middle.x,middle.y,true);touch(middle.x,middle.y,false);
+    assert(jogContinuous && jogs.size()==2 && !jogs[1].pressed);
     jogs.clear();click("X+ limit\n-");assert(jogs.empty() && x.leftStop==x.pos);
     screens.updateDisplay();
     // Disabled axes cannot generate touch-driven jogs; Z still works.

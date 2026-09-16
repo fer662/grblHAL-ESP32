@@ -19,15 +19,15 @@ DPad::DPad(lv_obj_t *parent, ButtonDownCallback downCb, ButtonUpCallback upCb,
   auto title = lv_label_create(container);
   lv_label_set_text(title, "JOG");
   lv_obj_set_style_text_font(title, LV_FONT_BIG, 0);
-  lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 12);
+  lv_obj_align(title, LV_ALIGN_TOP_LEFT, 16, 28);
 
   // Keep H5's physical direction mapping: left is Z+, right is Z-.
   const char *labels[] = {LV_SYMBOL_UP "  X+", "Z-  " LV_SYMBOL_RIGHT,
                          LV_SYMBOL_DOWN "  X-", LV_SYMBOL_LEFT "  Z+"};
-  const lv_point_t positions[] = {{220, 132}, {316, 260}, {220, 388}, {124, 260}};
+  const lv_point_t positions[] = {{236, 104}, {376, 244}, {236, 384}, {96, 244}};
   for (unsigned i = 0; i < 4; ++i) {
     buttons[i] = lv_btn_create(container);
-    lv_obj_set_size(buttons[i], 160, 112);
+    lv_obj_set_size(buttons[i], 128, 128);
     lv_obj_set_pos(buttons[i], positions[i].x, positions[i].y);
     lv_obj_set_style_radius(buttons[i], 12, 0);
     lv_obj_set_style_bg_color(buttons[i], APP_COLOR_WARNING, 0);
@@ -46,17 +46,17 @@ DPad::DPad(lv_obj_t *parent, ButtonDownCallback downCb, ButtonUpCallback upCb,
     lv_obj_add_event_cb(buttons[i], press_event_cb, LV_EVENT_PRESS_LOST, this);
   }
 
-  // Each limit sits beyond its jog arrow, with a 16-pixel gap between targets.
-  const lv_point_t limitPositions[] = {{220, 52}, {492, 272}, {220, 516}, {8, 272}};
+  // Outer limits retain their directional placement around the square jogs.
+  const lv_point_t limitPositions[] = {{224, 24}, {516, 256}, {224, 528}, {4, 256}};
   for (unsigned i = 0; i < 4; ++i) {
     endstopButtons[i] = lv_btn_create(container);
     bool vertical = i == BTN_UP || i == BTN_DOWN;
-    lv_obj_set_size(endstopButtons[i], vertical ? 160 : 100, vertical ? 64 : 88);
+    lv_obj_set_size(endstopButtons[i], vertical ? 152 : 80, vertical ? 64 : 104);
     lv_obj_set_pos(endstopButtons[i], limitPositions[i].x, limitPositions[i].y);
     lv_obj_set_style_radius(endstopButtons[i], 8, 0);
     lv_obj_set_style_bg_color(endstopButtons[i], APP_COLOR_BG_TERTIARY, 0);
     lv_obj_set_style_bg_color(endstopButtons[i], APP_COLOR_SECONDARY, LV_STATE_PRESSED);
-    lv_obj_set_style_text_font(endstopButtons[i], &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_font(endstopButtons[i], &lv_font_montserrat_16, 0);
     lv_obj_set_style_pad_all(endstopButtons[i], 4, 0);
     endstopLabels[i] = lv_label_create(endstopButtons[i]);
     lv_obj_set_style_text_align(endstopLabels[i], LV_TEXT_ALIGN_CENTER, 0);

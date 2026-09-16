@@ -13,6 +13,7 @@ typedef struct {
     float max_rate[3], acceleration[3];
     float rpm;
     uint32_t command_id, completed_id, stream_generation;
+    uint32_t sampled_completed_id; // ACK observed by the last complete motion-state sample.
     int command_status, alarm;
     bool ready, moving, held;
     char state[24];

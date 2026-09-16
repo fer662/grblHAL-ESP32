@@ -167,6 +167,7 @@ void h5_bridge_poll(void)
     s.stream_generation = published.stream_generation;
     s.command_id = next_id;
     s.completed_id = published.completed_id;
+    s.sampled_completed_id = published.completed_id;
     s.command_status = published.command_status;
     published = s;
     h5_critical_exit(&lock);

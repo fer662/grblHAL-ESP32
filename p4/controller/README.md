@@ -10,6 +10,12 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
 ## Current scope
 
+**0.3.8 separates Hold and Single-step jogging.** A center toggle selects the
+behavior; STEP has moved into the right pane and controls distance independently.
+Hold cancels on release, while Single step completes one bounded increment without
+auto-repeat. The selection persists. Active spindle-follow Z overrides retain
+their whole-pitch rounding. See [jog controls and previews](UI_ROADMAP.md).
+
 **0.3.7 places machining limits outside their corresponding jog arrows.**
 The rest of the 0.3.6 layout is retained. See the updated
 [Gearbox and Thread previews](UI_ROADMAP.md).

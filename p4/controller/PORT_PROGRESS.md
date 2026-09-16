@@ -308,6 +308,37 @@ acceptance remain pending; HTTP diagnostics requires opening the local Diagnosti
 screen. No remote motion command was issued. Current previews are linked from
 [UI_ROADMAP.md](UI_ROADMAP.md).
 
+## 0.3.8 explicit Hold / Single-step jog mode
+
+Added the center jog-mode toggle and moved STEP into the right pane. The jog
+cross now uses 128 x 128 square buttons, retaining the outer directional limits.
+Other operation controls retain their positions. Mode and distance are independent:
+Hold stops on release; Single step submits one bounded increment, completes after
+release and does not auto-repeat. Existing SHIFT and unit-selection actions remain.
+The mode persists in a formerly reserved ui_v1 preference byte; old blobs default
+to Hold without changing pitch, step, calibration or operation settings.
+
+Ordinary jogs reject overlapping taps until a coherent bridge motion snapshot
+has observed the prior command's acknowledgment and motion has finished. Stop,
+axis-disable and reset paths release the single-step reservation. During active
+assisted feed, Single sends the existing one-shot override request; synchronized
+Z still rounds to whole pitches. A Hold release now also discards a still-pending
+override, preventing a quick released press from starting late.
+
+The production-function host tests passed for mode/distance independence, both
+unit systems, release behavior, duplicate/pending/active presses, bound clipping,
+cancellation, disabled axes, assisted-feed routing, release-before-start and
+preference-layout compatibility. The existing core cancellation/completion test
+passed. Actual LVGL pointer tests passed, including slide-out into the new center
+button without changing modes, relocated STEP and all eight mode layouts. Desktop
+Gearbox, Thread and Single-step previews were visually checked.
+
+The IDF 5.5.2 normal build passed, with 23% OTA application space free. SHA-256:
+`5329b5459066476600205f03502fd87cd19e6d6c1957d8621ae6b77e4ffcdac1`.
+OTA installation and real-machine acceptance are pending; no remote motion or
+connected bench test was run. Further corner controls are proposals in
+[UI_ROADMAP.md](UI_ROADMAP.md).
+
 ## Hardware acceptance still required
 
 - [ ] Inspect external STEP/DIR pulse widths, jitter, skew and setup/hold at the connector.
