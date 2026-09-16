@@ -131,14 +131,11 @@ def validate_cycle(lines, before, passes, starts, pitch, rpm, forward, length, t
         assert int(sync['PULSES']) == expected_pulses
         assert sync['FAULT'] == 'NONE'
         reference = (i % starts)*1200/starts
-        # The bench trace still uses a conservative analysis window. This is
-        # test sampling, not an advertised thread length or a motion endpoint.
-        lead_in = float(sync['LEAD_MM'])
-        v = lead*float(plan['RPM_LIMIT'])/60
-        run_out = v*v/(2*float(plan['ACCEL'])) + .25*v + .01
+        # Evaluate the programmed full-depth section of the continuous pass.
+        full_begin = direction*(float(plan['FULL_BEGIN'])-float(plan['APPROACH']))
+        full_end = direction*(float(plan['FULL_END'])-float(plan['APPROACH']))
         errors = [(encoder-reference)*lead/1200-(step/200+approach_offset)
-                  for step, encoder, _ in points
-                  if lead_in <= step/200 <= length-approach_offset-run_out]
+                  for step, encoder, _ in points if full_begin <= step/200 <= full_end]
         assert len(errors) >= 2, 'Need a longer steady region for a phase trace'
         origin = round(errors[0]/lead)*lead
         peak = max(abs(error-origin) for error in errors)

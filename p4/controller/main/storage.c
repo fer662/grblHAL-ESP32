@@ -98,21 +98,29 @@ void h5_storage_hal(void)
 }
 void h5_storage_upgrade_motion(void)
 {
-    // One-time 0.3.18 migration. Keep deliberate tuning and bench profiles.
-    // Use the native setter so planner limits, callbacks and persistence agree.
+    // Boot-only native settings upgrades. Preserve explicit tuning and bench profiles.
     if (!ready || H5_BENCH_ONLY) return;
     uint8_t revision = 0;
     esp_err_t result = nvs_get_u8(handle, "motion_rev", &revision);
-    if ((result != ESP_OK && result != ESP_ERR_NVS_NOT_FOUND) || revision >= 1) return;
-    if (settings.axis[Z_AXIS].acceleration == 50.0f * 3600.0f) {
+    if ((result != ESP_OK && result != ESP_ERR_NVS_NOT_FOUND) || revision >= 2) return;
+    uint32_t before = writes;
+    bool changed = false;
+    if (revision < 1 && settings.axis[Z_AXIS].acceleration == 50.0f * 3600.0f) {
         char value[] = "100";
-        uint32_t before = writes;
         if (settings_store_setting(Setting_AxisAcceleration + Z_AXIS, value) != Status_OK) return;
+        changed = true;
+    }
+    if (settings.axis[X_AXIS].max_rate == 60.0f) {
+        char value[] = "300";
+        if (settings_store_setting(Setting_AxisMaxRate + X_AXIS, value) != Status_OK) return;
+        changed = true;
+    }
+    if (changed) {
         nvs_buffer_sync_physical();
         // Do not mark the upgrade complete if the core blob did not reach flash.
         if (writes == before) return;
     }
-    if (nvs_set_u8(handle, "motion_rev", 1) != ESP_OK || nvs_commit(handle) != ESP_OK)
+    if (nvs_set_u8(handle, "motion_rev", 2) != ESP_OK || nvs_commit(handle) != ESP_OK)
         failures++;
 }
 void h5_storage_poll(void)

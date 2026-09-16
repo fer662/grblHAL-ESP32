@@ -75,13 +75,29 @@ bool h5_cycle_plan(const h5_cycle_config_t *c, const h5_cycle_machine_t *m, h5_c
         // direction. Acceleration and braking consume usable thread length;
         // neither is permission to travel beyond a cleared shoulder.
         p->approach += p->direction / steps;
-        // Necessary speed feasibility, not a claimed full-pitch region. A
-        // rest-to-rest pass must have room for both ramps at the RPM ceiling
-        // and at least one step at feed. No arbitrary settling-time allowance.
+        if (m->x_steps_mm <= 0 || m->x_max_rate <= 0 || m->x_acceleration <= 0)
+            return fail(error, size, "Invalid X motion settings for moving thread infeed");
+        p->x_steps_mm = m->x_steps_mm;
+        p->z_steps_mm = steps;
+        // Run up/brake at clearance. Quintic X entry/exit has zero endpoint
+        // velocity and acceleration, max slope 1.875 and max curvature 10/sqrt(3).
         double v = p->lead * c->rpm_limit / 60;
-        double ramp = ceil(v * v / (2 * acceleration) * steps) / steps;
-        if (fabs(p->finish - p->approach) < 2 * ramp + 1 / steps - 1e-9)
-            return fail(error, size, "Thread travel too short to reach feed at RPM limit; reduce RPM or increase acceleration");
+        double run = (ceil(v * v / (2 * acceleration) * steps) + 1) / steps;
+        double stroke = fabs(p->depth_end - p->clearance);
+        double seconds = fmax(1.875 * stroke / (m->x_max_rate / 60),
+                              sqrt((10 / sqrt(3.0)) * stroke / m->x_acceleration));
+        // Equal, integral Z-step chords; reserve one X step of velocity for rounding.
+        double ramp = ceil(v * (seconds + H5_THREAD_RAMP_SEGMENTS / (m->x_steps_mm * m->x_max_rate / 60))
+                           * steps / H5_THREAD_RAMP_SEGMENTS) * H5_THREAD_RAMP_SEGMENTS / steps;
+        if (fabs(p->finish - p->approach) < 2 * (run + ramp) + 1 / steps - 1e-9) {
+            snprintf(error, size, "Thread needs %.3f mm Z at %.0f RPM for moving X entry/retract; reduce RPM",
+                     2 * (run + ramp) + 2 / steps, c->rpm_limit);
+            return false;
+        }
+        p->entry_begin = p->approach + p->direction * run;
+        p->full_begin = p->entry_begin + p->direction * ramp;
+        p->exit_end = p->finish - p->direction * run;
+        p->full_end = p->exit_end - p->direction * ramp;
     }
     if (cut)
         p->depth_start = p->depth_end = p->clearance = m->z;
@@ -145,4 +161,25 @@ void h5_cycle_point(const h5_cycle_plan_t *p, unsigned pass, unsigned segment, d
     *x = p->depth_start + dx * b;
     *z = p->cut_end - dz + dz * a;
     *feed = p->lead * hypot(dx * (b - pb), dz * (a - pa)) / (fabs(dz) / p->segments);
+}
+
+void h5_thread_point(const h5_cycle_plan_t *p, unsigned pass, unsigned point, double *x, double *z)
+{
+    double depth = h5_cycle_depth(p, pass);
+    if (point == 0) { *x = p->clearance; *z = p->approach; }
+    else if (point == 1) { *x = p->clearance; *z = p->entry_begin; }
+    else if (point <= H5_THREAD_RAMP_SEGMENTS + 1) {
+        double t = (point - 1.0) / H5_THREAD_RAMP_SEGMENTS;
+        double s = t*t*t*(10 + t*(-15 + 6*t));
+        *x = p->clearance + (depth-p->clearance)*s;
+        *z = p->entry_begin + (p->full_begin-p->entry_begin)*t;
+    } else if (point == H5_THREAD_RAMP_SEGMENTS + 2) { *x = depth; *z = p->full_end; }
+    else if (point < H5_THREAD_BLOCKS) {
+        double t = (point - H5_THREAD_RAMP_SEGMENTS - 2.0) / H5_THREAD_RAMP_SEGMENTS;
+        double s = t*t*t*(10 + t*(-15 + 6*t));
+        *x = depth + (p->clearance-depth)*s;
+        *z = p->full_end + (p->exit_end-p->full_end)*t;
+    } else { *x = p->clearance; *z = p->finish; }
+    *x = round(*x*p->x_steps_mm)/p->x_steps_mm;
+    *z = round(*z*p->z_steps_mm)/p->z_steps_mm;
 }

@@ -1,14 +1,22 @@
 # H5 grblHAL ESP32-P4 port
 
 This is a separate ESP-IDF application using a pinned `main/grbl` core submodule.
-The core fork keeps five small changes separate: spindle timing/acceleration,
-configurable AMASS cutoff and a cancellation/completion race fix. See
+The core fork keeps six small changes separate: spindle timing/acceleration,
+configurable AMASS cutoff, a cancellation/completion race fix, and continuous
+spindle phase across connected motion blocks. See
 [spindle tracking](SPINDLE_TRACKING.md), [hand following](HAND_FOLLOW.md) and the
 upstream-update table below. The original ESP32/S3 driver source
 remains untouched; its build has not been revalidated against these core changes.
 The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
 ## Current scope
+
+**0.3.19 synchronizes and accelerates Thread with X clear, then infeeds and
+withdraws X while Z keeps moving.** All 27 native motion blocks are queued before
+one index wait; an opt-in core patch preserves phase across them. The preview
+shows programmed full-depth start/end and length. Real X speed/acceleration and
+Z bounds determine whether a setup fits. Normal X max rate is 300 mm/min;
+manual X jogging stays 60 mm/min and X acceleration stays 25 mm/s². See [continuous threading](CONTINUOUS_THREADING.md).
 
 **0.3.18 reports actual Thread infeed/retract stations and cutting travel.**
 Removed the speculative usable-thread region and arbitrary settling margins.
@@ -94,7 +102,7 @@ lathe. See [wireless commissioning](WIRELESS_COMMISSIONING.md).
 - Real grblHAL G-code parser, planner, Bresenham/AMASS step generation,
   acceleration profiles, feed hold/resume, jog cancellation and reset handling.
 - X/Z STEP/DIR on the existing H5 pins; calibration 1200 / 200 steps per mm,
-  max rates 60 / 960 mm/min, accelerations 25 / 100 mm/s² (normal build; disconnected bench retains Z 50), X radial coordinates.
+  max rates 300 / 960 mm/min, accelerations 25 / 100 mm/s² (normal build; disconnected bench retains X max 60 and Z acceleration 50), X radial coordinates.
 - grblHAL retains XYZ storage; Y commands and arcs outside G18 are rejected.
 - 10 MHz GPTimer scheduler and separate pulse timer. Minimum requested STEP
   width 10 us by default, direction setup at least 5 us. GPIO writes span two
@@ -321,8 +329,8 @@ version, settings version, core source inventory and ISR dependencies on every
 core upgrade. Do not advance the core automatically from a moving branch.
 
 The core submodule points to `https://github.com/fer662/grblHAL-core`, branch
-`codex/spindle-tracking`, commit `09df51bf9f527795920661b47db791181d4f5b2a`.
-It has five isolated commits over upstream `516e5ad80757bd2eba86bff18feb613ca121dc16`:
+`codex/spindle-tracking`, commit `e59703f`.
+It has six isolated commits over upstream `516e5ad80757bd2eba86bff18feb613ca121dc16`:
 
 | Commit | Purpose |
 | --- | --- |
@@ -331,6 +339,7 @@ It has five isolated commits over upstream `516e5ad80757bd2eba86bff18feb613ca121
 | `28dabc2` | Opt-in rate and acceleration limits for the actual X/Z path. |
 | `f799fd0` | Configurable AMASS cutoff; the upstream default remains 8000 Hz. |
 | `09df51b` | Avoid waiting for a second completion when cancellation and completion coincide. |
+| `e59703f` | Opt-in continuous synchronized blocks retain one spindle origin and acceleration phase reference. |
 
 The original `codex/spindle-segment-time` branch retains only the first fix.
 Preserve this separation when merging/rebasing upstream; drop a local patch only

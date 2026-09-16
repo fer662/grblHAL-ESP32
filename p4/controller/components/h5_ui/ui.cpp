@@ -235,16 +235,20 @@ static void format_cycle_preview(const h5_cycle_plan_t &plan, char *text, size_t
     char geometry[650];
     if (plan.indexed)
         snprintf(geometry,sizeof(geometry),
-            "X infeed at Z %.*f %s | X retract at Z %.*f %s\n"
-            "Z travel at cutting depth: %.*f %s\n"
-            "X depth: first pass %.*f %s | final pass %.*f %s\n"
-            "X retract target: %.*f %s | Z acceleration: %.0f mm/s^2\n"
-            "Z accelerates and brakes at cutting depth; X retract follows Z stop.\n",
-            digits,coordinate('Z',plan.approach),unit,digits,coordinate('Z',plan.finish),unit,
-            digits,fabs(plan.finish-plan.approach)*scale,unit,
-            digits,coordinate('X',h5_cycle_depth(&plan,0)),unit,
+            "Sync/run-up: X clear; Z %.*f to %.*f %s\n"
+            "X infeed while Z moves: %.*f to %.*f %s\n"
+            "Full-depth thread: Z %.*f to %.*f %s | length %.*f %s\n"
+            "X withdrawal: Z %.*f to %.*f %s | Z stop: %.*f %s\n"
+            "X depth: first %.*f, final %.*f %s | X clear: %.*f %s\n",
+            digits,coordinate('Z',plan.approach),digits,coordinate('Z',plan.entry_begin),unit,
+            digits,coordinate('Z',plan.entry_begin),digits,coordinate('Z',plan.full_begin),unit,
+            digits,coordinate('Z',plan.full_begin),digits,coordinate('Z',plan.full_end),unit,
+            digits,fabs(plan.full_end-plan.full_begin)*scale,unit,
+            digits,coordinate('Z',plan.full_end),digits,coordinate('Z',plan.exit_end),unit,
+            digits,coordinate('Z',plan.finish),unit,
+            digits,coordinate('X',h5_cycle_depth(&plan,0)),
             digits,coordinate('X',h5_cycle_depth(&plan,plan.config.passes-1)),unit,
-            digits,coordinate('X',plan.clearance),unit,plan.cut_acceleration);
+            digits,coordinate('X',plan.clearance),unit);
     else
         snprintf(geometry,sizeof(geometry),
             "Approach: %.*f %s | End: %.*f %s\n"

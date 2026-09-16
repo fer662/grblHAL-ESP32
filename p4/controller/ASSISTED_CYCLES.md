@@ -5,6 +5,19 @@ Turn/Thread geometry and records its earlier validation. See [OPERATIONS.md](OPE
 for Face, Cut, Ellipse, Gearbox, Cone, Async, parameter edits and the current
 operating limits. See [PORT_PROGRESS.md](PORT_PROGRESS.md) for final regression status.
 
+## Change in 0.3.19: synchronize and accelerate at clearance
+
+Thread now executes one continuous indexed path: clear Z run-up, moving X
+entry, full-depth cut, moving X withdrawal, clear Z braking. The preview shows
+actual programmed stations and full-depth length. Entry/exit lengths respect
+X speed and acceleration; short spans are rejected rather than exceeded.
+Normal X maximum rate is now 300 mm/min (native saved-setting upgrade from the
+former 60 default), while manual jogging stays 60 and X acceleration stays 25 mm/s².
+The old committed H5 implementation also fed X in before its spindle phase wait.
+See [continuous threading](CONTINUOUS_THREADING.md) for source findings, geometry,
+core integration, test coverage and machine limitations. Historical sections
+below describe earlier behavior and are superseded by this change.
+
 ## Change in 0.3.18: actual motion endpoints; Z acceleration
 
 Thread previews now show the emitter's actual commanded positions: X infeeds
@@ -127,8 +140,8 @@ below describe the pre-0.3.14 implementation where both used G33.
    bounds, and the auxiliary direction. Thread also uses the starts setting.
 2. With both axes available and the spindle encoder running, press START.
 3. Review the cycle preview. It shows radial X coordinates, cutting Z bounds,
-   actual X-infeed/Z-retract stations, Z cutting travel, first/final X depth,
-   retracted X position, Z acceleration and maximum RPM. All
+   clear run-up, moving X infeed/withdrawal, full-depth start/end and length,
+   first/final X depths, X clearance and maximum RPM. All
    coordinates in this preview use the **main-screen zero and selected units**.
    The motion plan and diagnostic commands continue using machine millimeters.
 4. RUN CYCLE copies the configuration to the grbl task. The status line
@@ -157,11 +170,11 @@ For Thread, the generated sequence is:
 1. Set metric/radial coordinates and the XZ plane.
 2. Retract X to its clearance position before moving Z to the approach.
 3. Move to the Z start bound, then take up one step inward in the cutting direction.
-4. Move X to the current depth.
-5. Register the spindle phase for this start and select expected spindle direction.
-6. Execute one straight-Z G33 move to the opposite Z bound. Run-in and braking
-   happen at cutting depth; no full-pitch-region prediction is displayed.
-7. Retract X, return Z to the start bound at clearance, and take up one step inward.
+4. Keep X at clearance, register spindle phase and select spindle direction.
+5. Queue the complete continuous path before the single index wait.
+6. Accelerate Z clear, infeed X while moving, cut the full-depth section,
+   withdraw X while moving, then brake Z clear at the opposite bound.
+7. Return Z at clearance and take up one step inward.
 8. Repeat all starts at the same depth before increasing depth.
 9. After the final pass, return Z to the cutting start and X to its initial bound.
 10. Restore zero diagnostic phase, absolute distance mode and feed-per-minute mode.
@@ -179,9 +192,9 @@ The default RPM ceiling remains 125% of current measured speed, capped at
 running cycle.
 
 Thread takes up one Z step inward: `approach = start_bound + direction / steps`.
-X infeeds there, G33 finishes at `end_bound`, and X retracts after Z has stopped.
-Neither RPM nor acceleration changes those stations. The minimum travel check
-uses the two acceleration/braking ramps described for 0.3.18 above.
+The continuous clear-entry sequence and its actual full-depth stations are
+specified in [CONTINUOUS_THREADING.md](CONTINUOUS_THREADING.md). RPM and X limits
+now determine entry/withdrawal lengths, but never extend the entered bounds.
 
 Each start's requested spindle phase includes that one-step displacement divided
 by lead. The prepared core profile still supplies acceleration phase compensation.

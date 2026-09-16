@@ -49,6 +49,7 @@ static axes_signals_t enable_invert = {.mask = DEFAULT_ENABLE_SIGNALS_INVERT_MAS
 bool h5_motor_controls_enabled(void) { return !H5_BENCH_ONLY; }
 static volatile unsigned pulse_phase; // 0 idle, 1 direction setup, 2 pulse high, 3 hold
 bool h5_motion_idle(void) {return !running && !pulse_phase;}
+bool h5_motion_axes_available(void) {return !fault && !axis_change_pending && !disabled_requested && !disabled_applied;}
 static bool reset_after_pulse;
 static uint32_t pulse_ticks = 100, direction_ticks = 50, tick_period = 10000;
 static axes_signals_t step_invert, direction_invert, pending_steps;

@@ -54,29 +54,31 @@ int main() {
     c.operation=H5_THREAD;
     assert(h5_cycle_plan(&c,&m,&plan,error,sizeof error));
     format_cycle_preview(plan,text,sizeof text);
-    assert(strstr(text,"X infeed at Z 0.005 mm | X retract at Z 10.000 mm"));
-    assert(strstr(text,"Z travel at cutting depth: 9.995 mm"));
-    assert(strstr(text,"X depth: first pass 1.100 mm | final pass 2.000 mm"));
-    assert(!strstr(text,"Usable thread") && !strstr(text,"Steady-pitch") && !strstr(text,"Run-out"));
+    assert(strstr(text,"Sync/run-up: X clear; Z 0.005 to 0.020 mm"));
+    assert(strstr(text,"Full-depth thread: Z 2.420 to 7.585 mm | length 5.165 mm"));
+    assert(strstr(text,"X depth: first 1.100, final 2.000 mm | X clear: 0.500 mm"));
+    assert(!strstr(text,"(est.)") && !strstr(text,"Usable thread"));
     measure=1;format_cycle_preview(plan,text,sizeof text);
-    assert(strstr(text,"X infeed at Z 0.00020 in | X retract at Z 0.39370 in"));
-    assert(strstr(text,"Z travel at cutting depth: 0.39350 in"));
-    assert(strstr(text,"X retract target: 0.01969 in"));
-    assert(strstr(text,"Z accelerates and brakes at cutting depth; X retract follows Z stop."));
+    assert(strstr(text,"Sync/run-up: X clear; Z 0.00020 to 0.00079 in"));
+    assert(strstr(text,"Full-depth thread: Z 0.09528 to 0.29862 in | length 0.20335 in"));
     measure=MEASURE_METRIC;work_offset[0]=0;work_offset[2]=0;
-    c.passes=5;c.pitch=.5;c.z_min=0;c.z_max=10;c.rpm_limit=564;
-    m.rpm=451;m.z_acceleration=100;
+    c.passes=5;c.pitch=.5;c.z_min=0;c.z_max=10;c.rpm_limit=125;
+    m.rpm=100;m.z_acceleration=100;
     assert(h5_cycle_plan(&c,&m,&plan,error,sizeof error));
     format_cycle_preview(plan,text,sizeof text);
-    assert(strstr(text,"X infeed at Z 0.005 mm | X retract at Z 10.000 mm"));
-    assert(strstr(text,"Z travel at cutting depth: 9.995 mm"));
-    assert(strstr(text,"X depth: first pass 0.200 mm | final pass 1.000 mm"));
-    assert(strstr(text,"X retract target: -0.500 mm | Z acceleration: 100 mm/s^2"));
+    assert(strstr(text,"X infeed while Z moves: 0.020 to 3.020 mm"));
+    assert(strstr(text,"Full-depth thread: Z 3.020 to 6.985 mm | length 3.965 mm"));
+    assert(strstr(text,"X withdrawal: Z 6.985 to 9.985 mm | Z stop: 10.000 mm"));
+    assert(strstr(text,"X depth: first 0.200, final 1.000 mm | X clear: -0.500 mm"));
     c.pitch=-.5;assert(h5_cycle_plan(&c,&m,&plan,error,sizeof error));
     format_cycle_preview(plan,text,sizeof text);
-    assert(strstr(text,"X infeed at Z 9.995 mm | X retract at Z 0.000 mm"));
-    assert(strstr(text,"Z travel at cutting depth: 9.995 mm"));
+    assert(strstr(text,"Full-depth thread: Z 6.980 to 3.015 mm | length 3.965 mm"));
     assert(strstr(text,"does not resume mid-pass.")); // Entire footer fits the buffer.
+    c.pitch=.5;c.rpm_limit=564;m.rpm=451;m.x_max_rate=300;
+    assert(h5_cycle_plan(&c,&m,&plan,error,sizeof error));
+    format_cycle_preview(plan,text,sizeof text);
+    assert(strstr(text,"Full-depth thread: Z 2.945 to 7.060 mm | length 4.115 mm"));
+    assert(strstr(text,"X withdrawal: Z 7.060 to 9.880 mm | Z stop: 10.000 mm"));
     puts("PASS: preview zeros, axis selection, metric/inch positions and lengths; geometry unchanged");
 }
 '''.replace('FORMATTER', formatter)

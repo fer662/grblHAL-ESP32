@@ -154,6 +154,9 @@ void IRAM_ATTR h5_spindle_block(stepper_t *stepper)
     tracking = stepper->exec_segment->spindle_sync;
     waiting = false;
     if (tracking) {
+#if SPINDLE_SYNC_CONTINUOUS
+        if (stepper->exec_block->sync_continuation) return; // Trace one indexed pass, not each chord.
+#endif
         block_pulses = sample_count = axis_pulses[0] = axis_pulses[1] = 0;
         trace_axis=stepper->exec_block->steps.value[X_AXIS] > stepper->exec_block->steps.value[Z_AXIS] ? X_AXIS : Z_AXIS;
         block_pitch = stepper->exec_block->programmed_rate;

@@ -6,7 +6,24 @@ Earlier acceptance used a disconnected Waveshare P4 with enables locked. The
 0.3.3 main build enables normal axis controls for the operator-requested first
 unloaded Z test; installation status and remaining checks are recorded below.
 
-## 0.3.18 actual cut preview and acceleration (built; not installed)
+## 0.3.19 continuous clear-entry Thread (built; not installed)
+
+Checked committed H5 981851b: X infeed preceded phase wait there too. Implemented
+one continuous native-planner pass with clear Z run-up, moving X infeed/withdrawal,
+and clear braking, within the Z bounds. Added one opt-in core patch for phase
+continuity across blocks. Real entry/withdrawal stations replace full-span in-cut
+acceleration. X maximum rate increases from the inherited manual-jog 60 to
+300 mm/min, with a one-time revision-2 native settings upgrade; jogging remains
+60 and X acceleration remains 25 mm/s². Custom rate settings are preserved.
+
+Validation: production batch handler + actual core planner, segment generation
+and step ISR under a virtual clock/AddressSanitizer; 50–500 RPM, direction/depth,
+internal and multistart cases, slow RPM ramps, cancellation, X speed, phase,
+pulse totals and endpoints. Existing host regressions and firmware build passed;
+LVGL preview rendered in both units. No attached-machine motion/OTA or loaded
+cut validation. Details in [CONTINUOUS_THREADING.md](CONTINUOUS_THREADING.md).
+
+## 0.3.18 actual cut preview and acceleration (OTA uploaded)
 
 Thread preview now reports actual X infeed/retract Z stations, cutting travel,
 first/final X depths and X clearance. Removed estimated thread-length fields
