@@ -30,7 +30,6 @@ public:
 
 private:
   lv_obj_t *container;
-  lv_obj_t *hintLabel;
   bool lastLimitsEnabled = true;
   std::array<lv_obj_t *, 4> buttons;
   std::array<lv_obj_t *, 4> endstopButtons;

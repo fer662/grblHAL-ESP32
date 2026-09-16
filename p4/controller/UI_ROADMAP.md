@@ -1,5 +1,21 @@
 # Touchscreen improvements
 
+## Implemented in 0.3.11
+
+All four jog buttons grow from 128 x 128 to **152 x 180**, increasing their touch
+area by 67%. The right pane is now 640 x 724 at (616, 16), using the previous top
+margin and the space freed by removing the hint below the controls.
+
+X limit buttons match the 152-pixel jog width; Z limit buttons match the
+180-pixel jog height. There are 16-pixel gaps between X jogs and limits and
+12-pixel gaps between Z jogs and limits. STEP, JOG LIMITS and EDIT LIMITS fill
+232 x 260 corner slots. The center toggle retains its 128 x 128 size and is
+recentered between the jogs. Operation controls and motion behavior are unchanged.
+
+Actual LVGL renders with simulated readings:
+[Thread](docs/ui-0311-thread.png), [Gearbox](docs/ui-0311-gearbox.png),
+[Single step](docs/ui-0311-single-step.png), [Limits bypassed](docs/ui-0311-limits-off.png).
+
 ## Implemented in 0.3.10
 
 The remaining corners now contain **JOG LIMITS ON/OFF** (upper-right) and

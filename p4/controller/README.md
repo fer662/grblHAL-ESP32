@@ -10,6 +10,11 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
 ## Current scope
 
+**0.3.11 enlarges all four jog buttons to 152 x 180 pixels** (67% more touch
+area). The right pane uses the space up to the top edge; its bottom hint is
+removed. Limits remain directionally aligned and corner controls fill the new
+spaces. See [current touchscreen previews](UI_ROADMAP.md).
+
 **0.3.10 adds JOG LIMITS ON/OFF and EDIT LIMITS in the right pane.** Manual
 jogging can bypass the saved endpoints without clearing them; assisted operations
 retain their bounds. The editor supports signed display coordinates, Use current,

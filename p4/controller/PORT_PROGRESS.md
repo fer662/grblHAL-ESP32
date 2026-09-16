@@ -377,6 +377,21 @@ Application SHA-256:
 `7d56d9555102f066ccb056bace9783efe570cd30c5f55a5e998ab2aee7cb92f1`.
 OTA installation is pending. No connected hardware motion tests were run.
 
+## 0.3.11 larger jog targets
+
+Expanded the right pane upward to y=16 and widened it to 640 pixels. All four
+jog targets are now 152 x 180 (67% more touch area than 128 x 128). Removed the
+hint below the panel, aligned X/Z limit dimensions to their jogs, and resized
+corner controls to 232 x 260. The 128 x 128 center mode control is recentered.
+All operation controls and motion behavior are unchanged.
+
+The production LVGL pointer/layout regression passed, including all eight modes,
+direction/release, slide-out cancellation, disabled-axis controls and the limit
+editor. The Thread framebuffer render was visually inspected. The normal
+IDF 5.5.2 firmware build passed. Application SHA-256:
+`78f7248d26aedd017f9f93e2e1a9db9be7a6bb8b424d5d041016f5be80e4c3e3`.
+OTA installation is pending; no connected motion tests were run.
+
 ## Hardware acceptance still required
 
 - [ ] Inspect external STEP/DIR pulse widths, jitter, skew and setup/hold at the connector.

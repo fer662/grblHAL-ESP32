@@ -559,9 +559,9 @@ void NormalOperationMode::createStepButton() {
   stepButton = lv_btn_create(dpad->getContainer());
 
   // Fill the upper-left corner bounded by the outer limits and jog cross.
-  // The other corner slots have the same 220 x 208 footprint.
-  lv_obj_set_size(stepButton, 220, 208);
-  lv_obj_set_pos(stepButton, 4, 24);
+  // The other corner slots have the same 232 x 260 footprint.
+  lv_obj_set_size(stepButton, 232, 260);
+  lv_obj_set_pos(stepButton, 0, 0);
   lv_obj_set_style_radius(stepButton, 5, LV_PART_MAIN);
   lv_obj_set_style_text_color(stepButton, lv_color_hex(0xFFFFFF), 0);
   lv_obj_set_style_pad_all(stepButton, 6, LV_PART_MAIN);
@@ -594,7 +594,7 @@ void NormalOperationMode::createStepButton() {
 void NormalOperationMode::createJogModeButton() {
   jogModeButton = lv_btn_create(dpad->getContainer());
   lv_obj_set_size(jogModeButton, 128, 128);
-  lv_obj_set_pos(jogModeButton, 236, 244);
+  lv_obj_set_pos(jogModeButton, 256, 298);
   lv_obj_set_style_radius(jogModeButton, 12, 0);
   lv_obj_set_style_bg_color(jogModeButton, APP_COLOR_BG_TERTIARY, 0);
   lv_obj_set_style_border_width(jogModeButton, 2, 0);
@@ -626,8 +626,8 @@ void NormalOperationMode::createDPad() {
       &NormalOperationMode::dpadButtonUpCallback,
       &NormalOperationMode::dpadEndstopButtonUpCallback, this);
 
-  // Position the DPad on the right side of the screen, below the navigation bar
-  lv_obj_align(dpad->getContainer(), LV_ALIGN_TOP_RIGHT, -24, 104);
+  // Use the full right pane, aligned with the left pane's top controls.
+  lv_obj_align(dpad->getContainer(), LV_ALIGN_TOP_RIGHT, -24, 16);
 
   // Move DPad to front so it's always visible
   lv_obj_move_foreground(dpad->getContainer());
@@ -635,8 +635,8 @@ void NormalOperationMode::createDPad() {
 
 void NormalOperationMode::createLimitControls() {
   jogLimitsButton = lv_btn_create(dpad->getContainer());
-  lv_obj_set_size(jogLimitsButton, 220, 208);
-  lv_obj_set_pos(jogLimitsButton, 376, 24);
+  lv_obj_set_size(jogLimitsButton, 232, 260);
+  lv_obj_set_pos(jogLimitsButton, 408, 0);
   lv_obj_set_style_radius(jogLimitsButton, 5, 0);
   jogLimitsLabel = lv_label_create(jogLimitsButton);
   lv_obj_set_style_text_align(jogLimitsLabel, LV_TEXT_ALIGN_CENTER, 0);
@@ -647,8 +647,8 @@ void NormalOperationMode::createLimitControls() {
     }
   });
   auto edit = lv_btn_create(dpad->getContainer());
-  lv_obj_set_size(edit, 220, 208);
-  lv_obj_set_pos(edit, 4, 384);
+  lv_obj_set_size(edit, 232, 260);
+  lv_obj_set_pos(edit, 0, 464);
   lv_obj_set_style_radius(edit, 5, 0);
   lv_obj_set_style_bg_color(edit, APP_COLOR_INFO, 0);
   auto label = lv_label_create(edit);

@@ -9,7 +9,7 @@ DPad::DPad(lv_obj_t *parent, ButtonDownCallback downCb, ButtonUpCallback upCb,
       endstopButtonUpCallback(endstopUpCb), userData(userData) {
   lastEndstopTexts.fill("");
   container = lv_obj_create(parent);
-  lv_obj_set_size(container, 600, 628);
+  lv_obj_set_size(container, 640, 724);
   lv_obj_set_style_bg_color(container, APP_COLOR_BG_SECONDARY, 0);
   lv_obj_set_style_border_width(container, 0, 0);
   lv_obj_set_style_pad_all(container, 0, 0);
@@ -19,10 +19,10 @@ DPad::DPad(lv_obj_t *parent, ButtonDownCallback downCb, ButtonUpCallback upCb,
   // Keep H5's physical direction mapping: left is Z+, right is Z-.
   const char *labels[] = {LV_SYMBOL_UP "  X+", "Z-  " LV_SYMBOL_RIGHT,
                          LV_SYMBOL_DOWN "  X-", LV_SYMBOL_LEFT "  Z+"};
-  const lv_point_t positions[] = {{236, 104}, {376, 244}, {236, 384}, {96, 244}};
+  const lv_point_t positions[] = {{244, 80}, {396, 272}, {244, 464}, {92, 272}};
   for (unsigned i = 0; i < 4; ++i) {
     buttons[i] = lv_btn_create(container);
-    lv_obj_set_size(buttons[i], 128, 128);
+    lv_obj_set_size(buttons[i], 152, 180);
     lv_obj_set_pos(buttons[i], positions[i].x, positions[i].y);
     lv_obj_set_style_radius(buttons[i], 12, 0);
     lv_obj_set_style_bg_color(buttons[i], APP_COLOR_WARNING, 0);
@@ -41,12 +41,12 @@ DPad::DPad(lv_obj_t *parent, ButtonDownCallback downCb, ButtonUpCallback upCb,
     lv_obj_add_event_cb(buttons[i], press_event_cb, LV_EVENT_PRESS_LOST, this);
   }
 
-  // Outer limits retain their directional placement around the square jogs.
-  const lv_point_t limitPositions[] = {{236, 24}, {516, 244}, {236, 528}, {4, 244}};
+  // Outer limits retain their directional placement around the enlarged jogs.
+  const lv_point_t limitPositions[] = {{244, 0}, {560, 272}, {244, 660}, {0, 272}};
   for (unsigned i = 0; i < 4; ++i) {
     endstopButtons[i] = lv_btn_create(container);
     bool vertical = i == BTN_UP || i == BTN_DOWN;
-    lv_obj_set_size(endstopButtons[i], vertical ? 128 : 80, vertical ? 64 : 128);
+    lv_obj_set_size(endstopButtons[i], vertical ? 152 : 80, vertical ? 64 : 180);
     lv_obj_set_pos(endstopButtons[i], limitPositions[i].x, limitPositions[i].y);
     lv_obj_set_style_radius(endstopButtons[i], 8, 0);
     lv_obj_set_style_bg_color(endstopButtons[i], APP_COLOR_BG_TERTIARY, 0);
@@ -58,11 +58,6 @@ DPad::DPad(lv_obj_t *parent, ButtonDownCallback downCb, ButtonUpCallback upCb,
     lv_obj_center(endstopLabels[i]);
     lv_obj_add_event_cb(endstopButtons[i], endstop_press_event_cb, LV_EVENT_CLICKED, this);
   }
-  auto hint = hintLabel = lv_label_create(container);
-  lv_label_set_text(hint, "Limits: tap to set / clear  |  SHIFT: enter value");
-  lv_obj_set_style_text_font(hint, &lv_font_montserrat_16, 0);
-  lv_obj_set_style_text_color(hint, APP_COLOR_TEXT_SECONDARY, 0);
-  lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -14);
   update();
 }
 
@@ -84,12 +79,7 @@ void DPad::update() {
     if (disabled) lv_obj_add_state(buttons[i], LV_STATE_DISABLED);
     else lv_obj_clear_state(buttons[i], LV_STATE_DISABLED);
   }
-  if (lastLimitsEnabled != jogLimitsEnabled) {
-    lv_label_set_text(hintLabel, jogLimitsEnabled
-        ? "Limits: tap to set / clear  |  SHIFT: enter value"
-        : "Jog limits OFF  |  Assisted bounds still apply");
-    lastLimitsEnabled = jogLimitsEnabled;
-  }
+  lastLimitsEnabled = jogLimitsEnabled;
 }
 
 void DPad::setButtonColor(lv_color_t color) {
