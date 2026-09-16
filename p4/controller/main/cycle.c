@@ -245,10 +245,10 @@ static void poll_cycle(void)
         h5_critical_exit(&lock);
         char info[320];
         snprintf(info, sizeof(info),
-                 "[H5PLAN:LEAD:%.6f|LEAD_IN:%.6f|RUN_OUT:%.6f|APPROACH:%.6f|FINISH:%.6f|CLEARANCE:%.6f|RPM_"
-                 "LIMIT:%.3f|THREAD_START:%.6f|THREAD_END:%.6f]\r\n",
-                 plan.lead, plan.lead_in, plan.run_out, plan.approach, plan.finish, plan.clearance,
-                 config.rpm_limit, plan.thread_start, plan.thread_end);
+                 "[H5PLAN:LEAD:%.6f|APPROACH:%.6f|FINISH:%.6f|CLEARANCE:%.6f|RPM_"
+                 "LIMIT:%.3f|CUT_LENGTH:%.6f|ACCEL:%.3f]\r\n",
+                 plan.lead, plan.approach, plan.finish, plan.clearance,
+                 config.rpm_limit, fabs(plan.finish-plan.approach), plan.cut_acceleration);
         hal.stream.write(info);
     }
     if (sys.alarm) {

@@ -12,9 +12,8 @@ int main(void)
     h5_cycle_plan_t p; char error[96];
     assert(h5_cycle_plan(&c,&m,&p,error,sizeof(error)));
     assert(p.indexed);
-    CLOSE(p.lead,1); CLOSE(p.lead_in,2.95); CLOSE(p.run_out,1.87);
+    CLOSE(p.lead,1); CLOSE(p.cut_acceleration,50);
     CLOSE(p.approach,10.005); CLOSE(p.finish,20); CLOSE(p.takeup,10);
-    CLOSE(p.thread_start,12.955); CLOSE(p.thread_end,18.13);
     CLOSE(p.clearance,-1.5); CLOSE(h5_cycle_depth(&p,0),-.5); CLOSE(h5_cycle_depth(&p,3),1);
     assert(h5_cycle_phase(&p,0)==6); assert(h5_cycle_phase(&p,1)==606);
     for (int spindle=-1;spindle<=1;spindle+=2) for(int pitch=-1;pitch<=1;pitch+=2) {
@@ -24,9 +23,7 @@ int main(void)
         CLOSE((p.approach-p.cut_start)*p.direction,.005);
         CLOSE(p.finish,p.cut_end); CLOSE(p.takeup,p.cut_start);
         assert(p.approach>=c.z_min && p.approach<=c.z_max);
-        assert(p.thread_start>=c.z_min && p.thread_start<=c.z_max);
-        assert(p.thread_end>=c.z_min && p.thread_end<=c.z_max);
-        assert((p.thread_end-p.thread_start)*p.direction>0);
+        assert((p.finish-p.approach)*p.direction>0);
         CLOSE(h5_cycle_depth(&p,3),1);
     }
     c.aux_forward=false; assert(h5_cycle_plan(&c,&m,&p,error,sizeof(error)));
@@ -38,9 +35,9 @@ int main(void)
         assert(fabs(phase-round(phase)) <= .5/1200+.0000001);
     }
     unsigned phases[7]; for(unsigned i=0;i<7;i++) phases[i]=h5_cycle_phase(&p,i);
-    double previous_lead_in=p.lead_in;
+    double previous_approach=p.approach;
     c.rpm_limit=600; assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
-    assert(p.lead_in>previous_lead_in);
+    CLOSE(p.approach,previous_approach); // RPM changes do not move the tool-entry target.
     for(unsigned i=0;i<7;i++) assert(h5_cycle_phase(&p,i)==phases[i]);
     c.rpm_limit=360;
     c.threading=false; assert(h5_cycle_plan(&c,&m,&p,error,sizeof(error))); CLOSE(p.lead,.1); assert(p.starts==1);
@@ -59,7 +56,7 @@ int main(void)
         .x_min=0,.x_max=1,.z_min=0,.z_max=10,.rpm_limit=360};
     assert(h5_cycle_plan(&c,&m,&p,error,sizeof(error)));
     assert(p.cut_axis=='X' && p.depth_axis=='Z' && !p.indexed);
-    CLOSE(p.approach,0); CLOSE(p.finish,1); CLOSE(p.run_out,0); CLOSE(h5_cycle_depth(&p,0),5);
+    CLOSE(p.approach,0); CLOSE(p.finish,1); CLOSE(h5_cycle_depth(&p,0),5);
     c.operation=H5_CUT;c.z_min=c.z_max=0;
     assert(h5_cycle_plan(&c,&m,&p,error,sizeof(error)));CLOSE(p.clearance,m.z);
     c.operation=H5_ELLIPSE;c.z_max=10;
@@ -88,7 +85,7 @@ int main(void)
             m.rpm=400*spindle; m.z=4;
             assert(h5_cycle_plan(&c,&m,&p,error,sizeof(error)));
             assert(!p.indexed && p.starts==1);
-            CLOSE(p.lead,.1); CLOSE(p.lead_in,0); CLOSE(p.run_out,0);
+            CLOSE(p.lead,.1);
             CLOSE(p.approach,p.cut_start); CLOSE(p.takeup,p.cut_start); CLOSE(p.finish,p.cut_end);
             if(op==H5_CUT) { CLOSE(p.clearance,4); CLOSE(p.depth_start,4); CLOSE(p.depth_end,4); }
             else CLOSE(fabs(p.clearance-p.depth_start),.5); // Preserve tool clearance.
@@ -104,22 +101,36 @@ int main(void)
         .x_min=0,.x_max=1,.z_min=0,.z_max=.005,.rpm_limit=500};
     m.rpm=-400; assert(h5_cycle_plan(&c,&m,&p,error,sizeof(error)));
     CLOSE(p.approach,.005); CLOSE(p.takeup,.005); CLOSE(p.finish,0);
-    // Thread reserves synchronization space inside the span, never outside it.
+    // Thread targets are actual infeed/retract stations, independent of ramp length.
     c.operation=H5_THREAD; c.z_max=10;
     assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
     CLOSE(p.takeup,10); CLOSE(p.approach,9.995); CLOSE(p.finish,0);
-    CLOSE(p.thread_start,9.745); CLOSE(p.thread_end,.230);
-    double reserved=p.lead_in+p.run_out+.005;
+    double ramp=ceil(pow(.1*500/60,2)/(2*50)*200)/200;
+    double reserved=2*ramp+.005;
     for(int sign=-1;sign<=1;sign+=2) {
         c.pitch=.1*sign;
         c.z_max=reserved; assert(!h5_cycle_plan(&c,&m,&p,error,sizeof error));
         c.z_max=reserved+.0025; assert(!h5_cycle_plan(&c,&m,&p,error,sizeof error));
         c.z_max=reserved+.005; assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
-        CLOSE((p.thread_end-p.thread_start)*p.direction,.005);
+        CLOSE(fabs(p.finish-p.approach)-2*ramp,.005);
     }
-    // More starts consume more synchronization room; never silently trim pitch.
-    c.z_max=2; c.pitch=.1; c.starts=1;
+    // More starts need more ramp distance; never silently trim pitch.
+    c.z_max=.5; c.pitch=.1; c.starts=1;
     assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
     c.starts=7; assert(!h5_cycle_plan(&c,&m,&p,error,sizeof error));
-    puts("PASS: all profile bounds, inward thread margins, short-span rejection, phase and clearance");
+    // Photograph regression: the 10 mm span cuts from .005 to 10, not 2.075 to 8.590.
+    c=(h5_cycle_config_t){.operation=H5_THREAD,.passes=5,.starts=1,.pitch=.5,.aux_forward=true,
+        .x_min=0,.x_max=1,.z_min=0,.z_max=10,.rpm_limit=564};
+    m.rpm=451;m.z_acceleration=50;
+    assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
+    CLOSE(p.approach,.005);CLOSE(p.finish,10);CLOSE(fabs(p.finish-p.approach),9.995);
+    CLOSE(h5_cycle_depth(&p,0),.2);CLOSE(h5_cycle_depth(&p,4),1);
+    unsigned phase=h5_cycle_phase(&p,0);
+    m.z_acceleration=100;assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
+    CLOSE(p.cut_acceleration,100);CLOSE(p.approach,.005);CLOSE(p.finish,10);
+    assert(h5_cycle_phase(&p,0)==phase);
+    // A short pass can now reach the same feed at 100 but cannot at 50 mm/s^2.
+    c.z_max=.3;assert(h5_cycle_plan(&c,&m,&p,error,sizeof error));
+    m.z_acceleration=50;assert(!h5_cycle_plan(&c,&m,&p,error,sizeof error));
+    puts("PASS: actual cut targets, acceleration feasibility, phase, all profile bounds and clearance");
 }

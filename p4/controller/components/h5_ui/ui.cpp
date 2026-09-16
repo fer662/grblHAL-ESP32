@@ -230,28 +230,39 @@ static void format_cycle_preview(const h5_cycle_plan_t &plan, char *text, size_t
         Axis *a = axis == 'X' ? &x : &z;
         return (machine_mm - h5_ui_work_offset(a)) * scale;
     };
-    char thread_region[200] = "";
+    // These are the actual emitter targets, not a prediction of thread quality.
+    const int digits = measure == MEASURE_METRIC ? 3 : 5;
+    char geometry[650];
     if (plan.indexed)
-        snprintf(thread_region,sizeof(thread_region),
-            "Steady-pitch region (est.): Z %.3f to %.3f %s\n"
-            "Usable thread (est.): %.3f %s; margins are inside Z limits.\n",
-            coordinate('Z',plan.thread_start),coordinate('Z',plan.thread_end),unit,
-            fabs(plan.thread_end-plan.thread_start)*scale,unit);
+        snprintf(geometry,sizeof(geometry),
+            "X infeed at Z %.*f %s | X retract at Z %.*f %s\n"
+            "Z travel at cutting depth: %.*f %s\n"
+            "X depth: first pass %.*f %s | final pass %.*f %s\n"
+            "X retract target: %.*f %s | Z acceleration: %.0f mm/s^2\n"
+            "Z accelerates and brakes at cutting depth; X retract follows Z stop.\n",
+            digits,coordinate('Z',plan.approach),unit,digits,coordinate('Z',plan.finish),unit,
+            digits,fabs(plan.finish-plan.approach)*scale,unit,
+            digits,coordinate('X',h5_cycle_depth(&plan,0)),unit,
+            digits,coordinate('X',h5_cycle_depth(&plan,plan.config.passes-1)),unit,
+            digits,coordinate('X',plan.clearance),unit,plan.cut_acceleration);
+    else
+        snprintf(geometry,sizeof(geometry),
+            "Approach: %.*f %s | End: %.*f %s\n"
+            "%c infeed: %.*f to %.*f %s | Retracted: %.*f %s\n",
+            digits,coordinate(plan.cut_axis,plan.approach),unit,digits,coordinate(plan.cut_axis,plan.finish),unit,
+            plan.depth_axis,digits,coordinate(plan.depth_axis,plan.depth_start),
+            digits,coordinate(plan.depth_axis,plan.depth_end),unit,
+            digits,coordinate(plan.depth_axis,plan.clearance),unit);
     snprintf(text,size,
         "%s cycle preview\n\n%u depth passes x %u starts | lead %.4f %s/rev\n"
-        "%c travel bounds: %.3f to %.3f %s\nApproach: %.3f %s | End: %.3f %s\n"
-        "%c infeed: %.3f to %.3f %s | Retracted: %.3f %s\n"
-        "Run-in: %.3f %s | Run-out: %.3f %s\n%s\n"
+        "%c travel bounds: %.*f to %.*f %s\n%s\n"
         "Keep spindle between 30 and %.0f RPM in the current direction.\n"
         "Coordinates: %s work zero and screen units; X is slide travel.\n"
         "Cutting-axis travel stays within bounds; clearance retract is separate.\n"
         "STOP decelerates and cancels the pass; it does not resume mid-pass.",
         h5_cycle_name(plan.config.operation),plan.config.passes,plan.starts,plan.lead*scale,unit,
-        plan.cut_axis,coordinate(plan.cut_axis,plan.cut_start),coordinate(plan.cut_axis,plan.cut_end),unit,
-        coordinate(plan.cut_axis,plan.approach),unit,coordinate(plan.cut_axis,plan.finish),unit,
-        plan.depth_axis,coordinate(plan.depth_axis,plan.depth_start),coordinate(plan.depth_axis,plan.depth_end),unit,
-        coordinate(plan.depth_axis,plan.clearance),unit,
-        plan.lead_in*scale,unit,plan.run_out*scale,unit,thread_region,plan.config.rpm_limit,h5_ui_work_system());
+        plan.cut_axis,digits,coordinate(plan.cut_axis,plan.cut_start),digits,coordinate(plan.cut_axis,plan.cut_end),unit,
+        geometry,plan.config.rpm_limit,h5_ui_work_system());
 }
 static void preview_cycle()
 {
@@ -292,7 +303,7 @@ static void preview_cycle()
     format_cycle_preview(plan,text,sizeof(text));
     lv_label_set_text(label,text); lv_obj_align(label,LV_ALIGN_TOP_LEFT,5,5);
     lv_obj_t *run=cycle_run=lv_btn_create(cycle_panel); lv_obj_set_size(run,300,65); lv_obj_align(run,LV_ALIGN_BOTTOM_RIGHT,-10,-10);
-    lv_obj_t *run_text=lv_label_create(run); lv_label_set_text(run_text,"RUN BENCH CYCLE"); lv_obj_center(run_text);
+    lv_obj_t *run_text=lv_label_create(run); lv_label_set_text(run_text,"RUN CYCLE"); lv_obj_center(run_text);
     lv_obj_add_event_cb(run,[](lv_event_t *) {
         if (h5_cycle_request(&preview_config)) { cycle_selected=true; isOn=true; notice.clear(); }
         else notice="Another cycle is active";

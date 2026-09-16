@@ -21,8 +21,8 @@ typedef struct {
 typedef struct {
     h5_cycle_config_t config;
     int direction, spindle_direction;
-    double lead, lead_in, run_out, cut_start, cut_end, approach, finish;
-    double thread_start, thread_end; // Estimated steady-pitch region inside Z bounds.
+    double lead, cut_start, cut_end, approach, finish;
+    double cut_acceleration; // Configured mm/s^2, also used for thread speed feasibility.
     double depth_start, depth_end, clearance, takeup;
     unsigned starts, segments;
     char cut_axis, depth_axis;

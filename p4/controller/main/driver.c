@@ -582,6 +582,7 @@ static bool setup(settings_t *s)
     h5_tmc_init();
     // Fail closed if this SDK/toolchain does not preserve interrupted FP state.
     if (!h5_fpu_test()) { h5_motion_fault(); return false; }
+    if (s->version.id == SETTINGS_VERSION) h5_storage_upgrade_motion();
     return s->version.id == SETTINGS_VERSION;
 }
 bool driver_init(void)

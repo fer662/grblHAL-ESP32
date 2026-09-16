@@ -10,6 +10,13 @@ The P4 HAL uses ESP-IDF GPTimer, GPIO, UART and PCNT APIs.
 
 ## Current scope
 
+**0.3.18 reports actual Thread infeed/retract stations and cutting travel.**
+Removed the speculative usable-thread region and arbitrary settling margins.
+The preview reports first/final X depth, retract X and configured Z acceleration.
+Normal-build Z acceleration is now 100 mm/s² (X stays 25); a one-time native
+settings migration upgrades the old saved Z value of 50 while retaining custom
+values. See [Thread geometry and settings](ASSISTED_CYCLES.md).
+
 **0.3.17 uses native grblHAL work coordinates throughout the touchscreen.**
 X0/Z0 select G54 and zero that axis using G10 L20 P1. DRO, limit labels/editor,
 and cycle previews read the core's active work offset (including G92/tool offsets).
@@ -87,7 +94,7 @@ lathe. See [wireless commissioning](WIRELESS_COMMISSIONING.md).
 - Real grblHAL G-code parser, planner, Bresenham/AMASS step generation,
   acceleration profiles, feed hold/resume, jog cancellation and reset handling.
 - X/Z STEP/DIR on the existing H5 pins; calibration 1200 / 200 steps per mm,
-  max rates 60 / 960 mm/min, accelerations 25 / 50 mm/s², X radial coordinates.
+  max rates 60 / 960 mm/min, accelerations 25 / 100 mm/s² (normal build; disconnected bench retains Z 50), X radial coordinates.
 - grblHAL retains XYZ storage; Y commands and arcs outside G18 are rejected.
 - 10 MHz GPTimer scheduler and separate pulse timer. Minimum requested STEP
   width 10 us by default, direction setup at least 5 us. GPIO writes span two

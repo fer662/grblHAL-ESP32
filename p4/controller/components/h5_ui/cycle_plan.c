@@ -67,11 +67,7 @@ bool h5_cycle_plan(const h5_cycle_config_t *c, const h5_cycle_machine_t *m, h5_c
     p->depth_start = c->aux_forward ? depth_min : depth_max;
     p->depth_end = c->aux_forward ? depth_max : depth_min;
     p->clearance = p->depth_start + (c->aux_forward ? -.5 : .5);
-    double v = p->lead * c->rpm_limit / 60, deficit = v * v / (2 * acceleration);
-    if (p->indexed) {
-        p->lead_in = ceil((fmax(2 * p->lead, 4 * deficit + .25 * v) + .01) * steps) / steps;
-        p->run_out = ceil((deficit + .25 * v + .01) * steps) / steps;
-    }
+    p->cut_acceleration = acceleration;
     p->approach = p->takeup = p->cut_start;
     p->finish = p->cut_end;
     if (p->indexed) {
@@ -79,10 +75,13 @@ bool h5_cycle_plan(const h5_cycle_config_t *c, const h5_cycle_machine_t *m, h5_c
         // direction. Acceleration and braking consume usable thread length;
         // neither is permission to travel beyond a cleared shoulder.
         p->approach += p->direction / steps;
-        p->thread_start = p->approach + p->direction * p->lead_in;
-        p->thread_end = p->finish - p->direction * p->run_out;
-        if ((p->thread_end - p->thread_start) * p->direction < 1 / steps - 1e-9)
-            return fail(error, size, "Thread span too short for sync margins; reduce RPM/pitch/starts or revise bounds");
+        // Necessary speed feasibility, not a claimed full-pitch region. A
+        // rest-to-rest pass must have room for both ramps at the RPM ceiling
+        // and at least one step at feed. No arbitrary settling-time allowance.
+        double v = p->lead * c->rpm_limit / 60;
+        double ramp = ceil(v * v / (2 * acceleration) * steps) / steps;
+        if (fabs(p->finish - p->approach) < 2 * ramp + 1 / steps - 1e-9)
+            return fail(error, size, "Thread travel too short to reach feed at RPM limit; reduce RPM or increase acceleration");
     }
     if (cut)
         p->depth_start = p->depth_end = p->clearance = m->z;

@@ -4,6 +4,7 @@
 #include "freertos/FreeRTOS.h"
 #include "critical.h"
 #include "grbl/planner.h"
+#include "grbl/nvs_buffer.h"
 #include "grbl/state_machine.h"
 #include "grbl/stepper.h"
 #include "nvs_flash.h"
@@ -94,6 +95,25 @@ void h5_storage_hal(void)
         hal.nvs.memcpy_from_flash = read_core;
         hal.nvs.memcpy_to_flash = write_core;
     }
+}
+void h5_storage_upgrade_motion(void)
+{
+    // One-time 0.3.18 migration. Keep deliberate tuning and bench profiles.
+    // Use the native setter so planner limits, callbacks and persistence agree.
+    if (!ready || H5_BENCH_ONLY) return;
+    uint8_t revision = 0;
+    esp_err_t result = nvs_get_u8(handle, "motion_rev", &revision);
+    if ((result != ESP_OK && result != ESP_ERR_NVS_NOT_FOUND) || revision >= 1) return;
+    if (settings.axis[Z_AXIS].acceleration == 50.0f * 3600.0f) {
+        char value[] = "100";
+        uint32_t before = writes;
+        if (settings_store_setting(Setting_AxisAcceleration + Z_AXIS, value) != Status_OK) return;
+        nvs_buffer_sync_physical();
+        // Do not mark the upgrade complete if the core blob did not reach flash.
+        if (writes == before) return;
+    }
+    if (nvs_set_u8(handle, "motion_rev", 1) != ESP_OK || nvs_commit(handle) != ESP_OK)
+        failures++;
 }
 void h5_storage_poll(void)
 {

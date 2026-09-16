@@ -5,6 +5,51 @@ Turn/Thread geometry and records its earlier validation. See [OPERATIONS.md](OPE
 for Face, Cut, Ellipse, Gearbox, Cone, Async, parameter edits and the current
 operating limits. See [PORT_PROGRESS.md](PORT_PROGRESS.md) for final regression status.
 
+## Change in 0.3.18: actual motion endpoints; Z acceleration
+
+Thread previews now show the emitter's actual commanded positions: X infeeds
+at `approach`, G33 runs from `approach` to `finish` with X at cutting depth,
+and X retracts at `finish` after Z stops. The reported cutting travel is
+`abs(finish - approach)`. First/final X depth and the X clearance target are
+also explicit. Inch position displays use five decimals so a 0.005 mm approach
+step is visible. The RUN button now says RUN CYCLE.
+
+For the reported 0..10 mm Z span, 0.5 mm lead and five passes, this means
+X infeed at Z=0.005, X retract at Z=10.000, and 9.995 mm of Z travel at depth.
+With X depth bounds 0..1 and forward infeed, X depths are 0.200 through 1.000,
+and clearance is X=-0.500. G54 and reversed-direction conversion still apply.
+The previous 6.515 mm number did not control either contact station.
+
+There is no speculative usable-thread/steady-pitch region in the planner or
+preview. A cutting travel is not a claim of full-pitch finished thread over that
+whole length: the existing cycle accelerates and brakes with X at depth, waits
+for Z to stop, then retracts X. This update does not add a synchronized X pullout
+or a stock/contact model. Entry/retract stations describe commanded geometry.
+
+Z acceleration increases from 50 to 100 mm/s² in normal builds; X stays at 25.
+At the example ceiling of 564 RPM and 0.5 mm/rev, nominal acceleration/braking
+travel at constant spindle speed is `v²/(2a)` = 0.11045 mm per ramp at 100,
+compared with 0.2209 mm at 50. This does not move either endpoint.
+The earlier H5 baseline requested 50 mm/s² Z too, but initialized its step rate
+at 400 steps/s = 2 mm/s instead of starting from rest.
+
+The boot-only migration uses native `$122` storage semantics, forces the core
+NVS buffer to flash before recording `motion_rev=1`, and only upgrades a saved
+value exactly equal to the former 50 mm/s² default. Other custom values and later
+manual tuning are retained. Disconnected bench builds keep Z=50 and skip this
+migration. Increasing acceleration has not been tested on the loaded lathe.
+
+Short Thread passes now use a necessary speed-feasibility check: available G33
+travel must fit two `v²/(2a)` ramps rounded up to Z steps plus one cruise step,
+using the configured RPM ceiling. This replaces the old two-lead/250 ms settling
+heuristic; it does not certify pitch quality. All targets remain inside Z bounds.
+H5PLAN diagnostics now report `APPROACH`, `FINISH`, `CUT_LENGTH` and `ACCEL`;
+legacy estimated-region fields have been removed. The disconnected bench trace
+analyzer retains a conservative sampling window solely for its phase assertions.
+
+Rendered production UI: [Thread in mm](docs/thread-cycle-0318.png),
+[Thread in inches](docs/thread-inch-0318.png).
+
 ## Change in 0.3.16: consistent preview coordinates
 
 Cycle previews now use the main-screen zero and selected mm/in units for every
@@ -82,11 +127,11 @@ below describe the pre-0.3.14 implementation where both used G33.
    bounds, and the auxiliary direction. Thread also uses the starts setting.
 2. With both axes available and the spindle encoder running, press START.
 3. Review the cycle preview. It shows radial X coordinates, cutting Z bounds,
-   approach position, stopping endpoint, estimated usable thread region, retracted
-   X position and maximum RPM. All
+   actual X-infeed/Z-retract stations, Z cutting travel, first/final X depth,
+   retracted X position, Z acceleration and maximum RPM. All
    coordinates in this preview use the **main-screen zero and selected units**.
    The motion plan and diagnostic commands continue using machine millimeters.
-4. RUN BENCH CYCLE copies the configuration to the grbl task. The status line
+4. RUN CYCLE copies the configuration to the grbl task. The status line
    shows stage, pass and start. STOP cancels the cycle with controlled braking;
    a partially cut thread cannot be resumed with cycle-start.
 
@@ -115,7 +160,7 @@ For Thread, the generated sequence is:
 4. Move X to the current depth.
 5. Register the spindle phase for this start and select expected spindle direction.
 6. Execute one straight-Z G33 move to the opposite Z bound. Run-in and braking
-   consume part of this span; the estimated steady-pitch region is shorter.
+   happen at cutting depth; no full-pitch-region prediction is displayed.
 7. Retract X, return Z to the start bound at clearance, and take up one step inward.
 8. Repeat all starts at the same depth before increasing depth.
 9. After the final pass, return Z to the cutting start and X to its initial bound.
@@ -126,34 +171,24 @@ or regulate the physical lathe spindle. Feed direction is signed pitch multiplie
 by observed spindle direction. Thread lead is `abs(pitch) * starts`; Turn uses
 one start. X remains radial, including depth and clearance.
 
-### In-bound run-in, phase and run-out
+### In-bound travel, phase and speed feasibility
 
-The default preview RPM ceiling is 125% of current measured speed, capped at
-88% of the Z maximum-feed/pitch ratio. It never silently scales thread pitch.
-The cycle refuses to start if current RPM exceeds that ceiling or is below the
-bench encoder minimum of 30 RPM. During execution, leaving that RPM range or
-changing spindle direction cancels the cycle. Existing encoder stall/reversal
-fault handling still protects an active synchronized cut.
+The default RPM ceiling remains 125% of current measured speed, capped at
+88% of the Z maximum-feed/lead ratio. Starting above that ceiling or below
+30 RPM is rejected. Leaving that range or reversing the spindle cancels a
+running cycle.
 
-At the ceiling RPM, with velocity `v = lead * RPM / 60` and Z acceleration `a`:
+Thread takes up one Z step inward: `approach = start_bound + direction / steps`.
+X infeeds there, G33 finishes at `end_bound`, and X retracts after Z has stopped.
+Neither RPM nor acceleration changes those stations. The minimum travel check
+uses the two acceleration/braking ramps described for 0.3.18 above.
 
-- Acceleration deficit `L = v² / (2a)`.
-- Lead-in `max(2 * lead, 4 * L + 0.25 * v) + 0.01 mm`.
-- Run-out `L + 0.25 * v + 0.01 mm`.
-
-Distances are rounded upward to Z steps. They remain fixed for every pass in
-the cycle. The earlier backend performs acceleration phase compensation using
-the actual prepared profile. The cycle's requested start phase adds the inward approach offset divided by
-lead, so registration remains referenced to the **entered start bound**. Changing
-the RPM ceiling changes the estimated usable region, not that phase reference. Each multiple start uses its own rounded fraction
-of a revolution, avoiding accumulated rounding error for counts such as seven
-starts. See [spindle tracking](SPINDLE_TRACKING.md) for the slew assumption and
-scope of the backend measurements.
-
-For Thread, `approach = start_bound + direction / steps_per_mm`, `takeup =
-start_bound`, and `finish = end_bound`. The estimated steady region starts at
-`approach + direction * run_in` and ends at `finish - direction * run_out`.
-These margins reduce usable length; they never enlarge the Z target span.
+Each start's requested spindle phase includes that one-step displacement divided
+by lead. The prepared core profile still supplies acceleration phase compensation.
+Changing acceleration does not change the thread's reference to the entered start
+bound. Multiple starts retain individually rounded fractions of one revolution.
+See [spindle tracking](SPINDLE_TRACKING.md) for backend behavior and earlier bench
+measurements; those measurements do not validate the new loaded acceleration.
 
 All profile cutting-axis approach, cutting and return targets remain within their
 entered bounds. The depth-axis tool-clearance retract can extend beyond that

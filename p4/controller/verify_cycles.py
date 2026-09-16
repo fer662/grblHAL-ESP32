@@ -93,7 +93,7 @@ def screenshot():
 
 def validate_cycle(lines, before, passes, starts, pitch, rpm, forward, length, threading):
     plan = fields(next(line for line in lines if line.startswith('[H5PLAN:')))
-    lead, lead_in = float(plan['H5PLAN'].split(':', 1)[1]), float(plan['LEAD_IN'])
+    lead = float(plan['H5PLAN'].split(':', 1)[1])
     assert abs(lead-abs(pitch)*starts) < 1e-6
     direction = (1 if rpm*pitch > 0 else -1)
     z_start, z_end = (0, length) if direction > 0 else (length, 0)
@@ -101,13 +101,8 @@ def validate_cycle(lines, before, passes, starts, pitch, rpm, forward, length, t
     approach_offset = direction*(float(plan['APPROACH'])-z_start)
     assert abs(approach_offset-(.005 if threading else 0)) < 1e-6
     assert abs(float(plan['FINISH'])-z_end) < 1e-6
-    if threading:
-        assert abs(float(plan['THREAD_START'])-(float(plan['APPROACH'])+direction*lead_in)) < 1e-6
-        assert abs(float(plan['THREAD_END'])-(z_end-direction*float(plan['RUN_OUT']))) < 1e-6
-        assert (float(plan['THREAD_END'])-float(plan['THREAD_START']))*direction > 0
-    else:
-        assert lead_in == 0 and float(plan['RUN_OUT']) == 0
-        assert abs(float(plan['FINISH'])-z_end) < 1e-6
+    assert abs(float(plan['CUT_LENGTH'])-(length-approach_offset)) < 1e-6
+    assert float(plan['ACCEL']) > 0
     done = [fields(line) for line in lines if line.startswith('[H5DONE:')]
     expected = ['Setup', 'Retract', 'Approach', 'Take up'] + ['Infeed', 'Register', 'Spindle', 'Cut', 'Retract', 'Return', 'Take up']*(passes*starts) + ['Return to start', 'Finish infeed', 'Restore phase', 'Finish']
     assert [item['STAGE'] for item in done] == expected, [item['STAGE'] for item in done]
@@ -136,11 +131,14 @@ def validate_cycle(lines, before, passes, starts, pitch, rpm, forward, length, t
         assert int(sync['PULSES']) == expected_pulses
         assert sync['FAULT'] == 'NONE'
         reference = (i % starts)*1200/starts
-        # Only assess pitch inside the estimated steady region. Acceleration
-        # and braking now consume part of the entered span, not extra travel.
+        # The bench trace still uses a conservative analysis window. This is
+        # test sampling, not an advertised thread length or a motion endpoint.
+        lead_in = float(sync['LEAD_MM'])
+        v = lead*float(plan['RPM_LIMIT'])/60
+        run_out = v*v/(2*float(plan['ACCEL'])) + .25*v + .01
         errors = [(encoder-reference)*lead/1200-(step/200+approach_offset)
                   for step, encoder, _ in points
-                  if lead_in <= step/200 <= length-approach_offset-float(plan['RUN_OUT'])]
+                  if lead_in <= step/200 <= length-approach_offset-run_out]
         assert len(errors) >= 2, 'Need a longer steady region for a phase trace'
         origin = round(errors[0]/lead)*lead
         peak = max(abs(error-origin) for error in errors)

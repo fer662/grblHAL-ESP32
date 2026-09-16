@@ -66,13 +66,22 @@ int main(void) {
             issue(0); move(1); move(2); move(3);
             for(pass=0;pass<c.passes;pass++) {
                 if(pass && op==H5_ELLIPSE) { move(2); move(3); }
-                move(4); issue(5);
+                if(plan.indexed) assert(fabs(position[1]-plan.approach)<1e-6);
+                move(4);
+                if(plan.indexed) assert(fabs(position[0]-h5_cycle_depth(&plan,pass))<1e-6);
+                issue(5);
                 if(!plan.indexed) assert(!strcmp(emitted,"$P4PHASE=0"));
                 issue(6);
                 for(segment=0;segment<(op==H5_ELLIPSE?plan.segments:1);segment++) move(7);
                 double expected=op==H5_CUT ? plan.cut_start+(plan.cut_end-plan.cut_start)*(pass+1)/c.passes : plan.cut_end;
                 assert(fabs(position[plan.cut_axis=='X'?0:1]-expected)<1e-4);
-                move(8); move(9); move(10);
+                if(plan.indexed) assert(fabs(position[1]-plan.finish)<1e-6);
+                move(8);
+                if(plan.indexed) {
+                    assert(fabs(position[1]-plan.finish)<1e-6);
+                    assert(fabs(position[0]-plan.clearance)<1e-6);
+                }
+                move(9); move(10);
             }
             move(11); move(12); issue(13); issue(14);
             if(op==H5_CUT) assert(fabs(position[1]-m.z)<1e-6);

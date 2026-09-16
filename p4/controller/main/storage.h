@@ -2,6 +2,7 @@
 #include "grbl/hal.h"
 void h5_storage_init(void);
 void h5_storage_hal(void);
+void h5_storage_upgrade_motion(void); // boot only, after settings/hardware initialization
 void h5_storage_poll(void);
 bool h5_storage_ready(void);
 status_code_t h5_storage_command(sys_state_t,char *);

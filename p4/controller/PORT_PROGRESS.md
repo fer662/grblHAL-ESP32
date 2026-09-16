@@ -1,12 +1,29 @@
 # Port execution status
 
-Updated 2026-09-15. Original committed H5 baseline: `981851b2`.
+Updated 2026-09-16. Original committed H5 baseline: `981851b2`.
 The original H5 checkout and its unrelated dirty experiments remain unchanged.
 Earlier acceptance used a disconnected Waveshare P4 with enables locked. The
 0.3.3 main build enables normal axis controls for the operator-requested first
 unloaded Z test; installation status and remaining checks are recorded below.
 
-## 0.3.17 work-coordinate integration (built; not installed)
+## 0.3.18 actual cut preview and acceleration (built; not installed)
+
+Thread preview now reports actual X infeed/retract Z stations, cutting travel,
+first/final X depths and X clearance. Removed estimated thread-length fields
+and the arbitrary settling heuristic. The replacement short-span gate checks
+nominal acceleration/braking feasibility at the RPM ceiling. Existing machine
+endpoints, G54 conversion, bounded travel and multiple-start registration remain.
+Z acceleration is 100 mm/s² in normal builds, with a boot-only native/NVS upgrade
+from the former saved 50 default. Other tuning is preserved, including subsequent
+rollback; benchmark defaults/migration are kept at the former baseline.
+
+Validation: host geometry/preview and actual emitter checks, native-setting
+migration gate/persistence-failure stubs, G54/jog/enable/cancellation regressions,
+ESP32-P4 build, and rendered production preview in both units. Bench script syntax
+checked only; no on-lathe motion or OTA performed. No loaded-machine validation
+of 100 mm/s², full-pitch end-to-end thread claim, or synchronized X pullout.
+
+## 0.3.17 work-coordinate integration (OTA uploaded)
 
 Removed the UI-local origin. X0/Z0 submit a core-thread idle-guarded native
 G54/G10 L20 request. Core WCO and active WCS now drive all coordinate displays
@@ -18,7 +35,9 @@ metric/inch conversion and preview regressions; assisted geometry/emitter,
 cancellation and enable-output tests; production LVGL touch/editor and layout
 checks. Native G10 semantics are supplied by the pinned core; the new host gate
 test uses a parser spy, not a complete grblHAL emulator. No on-lathe commands or
-OTA installation were performed for this change.
+OTA installation were performed during implementation. Subsequently uploaded
+over Wi-Fi at the operator's request: firmware verified and device restart
+acknowledged; no remote motion was requested.
 
 ## Implemented
 
