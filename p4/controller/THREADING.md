@@ -49,7 +49,8 @@ remain passing. The actual core planner/segment/step ISR simulation runs one
 synchronized Z block at each depth, including RPM ramps and cancellation; it
 asserts no X pulses, exact final Z and pulse count, and steady-region phase error.
 The parser, physical spindle/index, task timing and loaded mechanics are outside
-that virtual-clock test. Firmware is built; no OTA or on-machine motion was sent.
+that virtual-clock test. See [port status](PORT_PROGRESS.md) for installation
+status; no new loaded-machine motion validation has been performed.
 
 Previous moving-entry work is recorded in [CONTINUOUS_THREADING.md](CONTINUOUS_THREADING.md)
 and git history; it is superseded by this sequence.

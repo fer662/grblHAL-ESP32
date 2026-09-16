@@ -6,7 +6,12 @@ Earlier acceptance used a disconnected Waveshare P4 with enables locked. The
 0.3.3 main build enables normal axis controls for the operator-requested first
 unloaded Z test; installation status and remaining checks are recorded below.
 
-## 0.3.24 assisted-operation compatibility (built; not installed)
+## 0.3.24 assisted-operation compatibility (OTA uploaded; boot confirmation pending)
+
+On 2026-09-16 the tablet at `10.0.0.110` accepted and verified the application
+upload and initiated restart. Remote diagnostics requires the operator to open
+Diagnostics after restart; running version and rollback confirmation are pending.
+Application SHA-256: `90c6fc3cf71147a67f88af554212259beeff7839b5c52ce337e7d98edf2c076b`.
 
 Profiles can start with the spindle off; removed 30 RPM/preview-ceiling policies
 and the P4 index-wait timeout. Stops retain pass/depth, with phase reacquisition
@@ -21,7 +26,7 @@ Validation: host profile lifecycle/command tests across all five modes, stopped
 startup, pause/retrace, endpoint/STOP races, low-RPM index wait, native planner/
 segment/ISR simulation including 1 RPM, shared jog rate regression, persistence
 round-trip/corrupt-record/retry/concurrent-edit tests and the ESP32-P4 build.
-No OTA, remote motion or new loaded-machine validation performed.
+OTA upload completed as recorded above; no remote motion or new loaded-machine validation performed.
 
 ## 0.3.23 restored Thread order (built; not installed)
 
